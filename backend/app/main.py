@@ -1,7 +1,7 @@
 """
 Main FastAPI application for SignalHub.
 """
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -12,6 +12,7 @@ import os
 from .config import settings
 from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
+from .upload import upload_audio_file, get_upload_status
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -147,6 +148,32 @@ async def get_call(call_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to get call {call_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve call")
+
+
+# ============================================================================
+# PHASE 1: AUDIO UPLOAD ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/upload")
+async def upload_endpoint(file: UploadFile = File(...)):
+    """
+    Upload audio file for processing.
+    
+    This endpoint accepts audio files and stores them for processing.
+    Supported formats: WAV, MP3, M4A, FLAC, OGG, AAC
+    Maximum file size: 100MB
+    """
+    return await upload_audio_file(file)
+
+
+@app.get("/api/v1/calls/{call_id}/status")
+async def get_call_status(call_id: str):
+    """
+    Get the processing status of a call.
+    
+    Returns the current status and metadata for a specific call.
+    """
+    return await get_upload_status(call_id)
 
 
 if __name__ == "__main__":
