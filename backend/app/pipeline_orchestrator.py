@@ -21,6 +21,7 @@ from .db_integration import DatabaseIntegration
 from .debug_utils import debug_helper
 from .logging_config import log_function_call, PerformanceMonitor
 from .models import Call
+from .pipeline_monitor import pipeline_monitor
 
 # Configure logger for this module
 logger = logging.getLogger('signalhub.pipeline_orchestrator')
@@ -261,6 +262,9 @@ class AudioProcessingPipeline:
         }
         self.debug_logger.log_pipeline_start(call_id, file_info)
         
+        # Start monitoring
+        pipeline_monitor.start_pipeline_monitoring(call_id, file_info)
+        
         try:
             logger.info(f"Starting complete pipeline processing for call: {call_id}")
             
@@ -285,12 +289,19 @@ class AudioProcessingPipeline:
             # Log pipeline completion
             self.debug_logger.log_pipeline_complete(call_id, final_result)
             
+            # Complete monitoring
+            pipeline_monitor.complete_pipeline(call_id, final_result)
+            
             logger.info(f"Pipeline completed successfully for call: {call_id}")
             return final_result
             
         except Exception as e:
             # Log pipeline error
             self.debug_logger.log_pipeline_error(call_id, e)
+            
+            # Fail monitoring
+            pipeline_monitor.fail_pipeline(call_id, e)
+            
             await self._handle_pipeline_error(call_id, e)
             raise
     
@@ -334,6 +345,10 @@ class AudioProcessingPipeline:
             }
             
             self.status_tracker.complete_step(call_id, "upload", result)
+            
+            # Update monitoring
+            pipeline_monitor.update_pipeline_step(call_id, "upload", "completed", 
+                                                self.status_tracker.step_timings[call_id]["upload"]["duration_seconds"])
             return result
             
         except Exception as e:
@@ -392,6 +407,10 @@ class AudioProcessingPipeline:
                 })
             
             self.status_tracker.complete_step(call_id, "audio_processing", result)
+            
+            # Update monitoring
+            pipeline_monitor.update_pipeline_step(call_id, "audio_processing", "completed", 
+                                                self.status_tracker.step_timings[call_id]["audio_processing"]["duration_seconds"])
             return result
             
         except Exception as e:
@@ -434,6 +453,10 @@ class AudioProcessingPipeline:
             }
             
             self.status_tracker.complete_step(call_id, "transcription", result)
+            
+            # Update monitoring
+            pipeline_monitor.update_pipeline_step(call_id, "transcription", "completed", 
+                                                self.status_tracker.step_timings[call_id]["transcription"]["duration_seconds"])
             return result
             
         except Exception as e:
@@ -474,6 +497,10 @@ class AudioProcessingPipeline:
             }
             
             self.status_tracker.complete_step(call_id, "database_storage", result)
+            
+            # Update monitoring
+            pipeline_monitor.update_pipeline_step(call_id, "database_storage", "completed", 
+                                                self.status_tracker.step_timings[call_id]["database_storage"]["duration_seconds"])
             return result
             
         except Exception as e:

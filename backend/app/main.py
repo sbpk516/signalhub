@@ -14,6 +14,7 @@ from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
 from .upload import upload_audio_file, get_upload_status
 from .pipeline_orchestrator import AudioProcessingPipeline
+from .pipeline_monitor import pipeline_monitor
 from .debug_utils import debug_helper
 
 # Create necessary directories first
@@ -252,6 +253,90 @@ async def get_pipeline_debug(call_id: str):
         
     except Exception as e:
         logger.error(f"Failed to get debug info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/monitor/active")
+async def get_active_pipelines():
+    """
+    Get currently active pipelines with real-time status.
+    
+    Returns information about all pipelines currently being processed.
+    """
+    try:
+        active_pipelines = pipeline_monitor.get_active_pipelines()
+        
+        return {
+            "active_pipelines": active_pipelines,
+            "count": len(active_pipelines),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get active pipelines: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/monitor/history")
+async def get_pipeline_history(limit: int = 50):
+    """
+    Get recent pipeline history.
+    
+    Returns information about recently completed or failed pipelines.
+    """
+    try:
+        history = pipeline_monitor.get_pipeline_history(limit)
+        
+        return {
+            "pipeline_history": history,
+            "count": len(history),
+            "limit": limit,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get pipeline history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/monitor/performance")
+async def get_performance_summary():
+    """
+    Get performance summary and system metrics.
+    
+    Returns comprehensive performance statistics and system resource usage.
+    """
+    try:
+        performance_summary = pipeline_monitor.get_performance_summary()
+        
+        return {
+            "performance_summary": performance_summary,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get performance summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/monitor/alerts")
+async def get_recent_alerts():
+    """
+    Get recent system alerts.
+    
+    Returns recent alerts for slow operations, high resource usage, etc.
+    """
+    try:
+        alerts = list(pipeline_monitor.alerts)[-20:]  # Last 20 alerts
+        
+        return {
+            "alerts": alerts,
+            "count": len(alerts),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get alerts: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
