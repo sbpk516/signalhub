@@ -144,3 +144,10 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Git Account Management (Local only)
+git-account-manager.sh
+setup-git-aliases.sh
+troubleshoot-git-accounts.sh
+MULTIPLE_GITHUB_ACCOUNTS_CONCEPT_GUIDE.md
+GIT_ACCOUNT_MANAGER_GUIDE.md
