@@ -6,6 +6,7 @@ Manages the flow: Upload → Audio Processing → Transcription → Database Sto
 import os
 import uuid
 import json
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -19,6 +20,7 @@ from .whisper_processor import WhisperProcessor
 from .db_integration import DatabaseIntegration
 from .debug_utils import debug_helper
 from .logging_config import log_function_call, PerformanceMonitor
+from .models import Call
 
 # Configure logger for this module
 logger = logging.getLogger('signalhub.pipeline_orchestrator')
@@ -233,6 +235,9 @@ class AudioProcessingPipeline:
         self.status_tracker = PipelineStatusTracker()
         self.debug_logger = PipelineDebugLogger()
         
+        # Pipeline data store for passing information between steps
+        self.pipeline_data = {}
+        
         logger.info("Audio processing pipeline initialized successfully")
     
     @log_function_call
@@ -307,8 +312,9 @@ class AudioProcessingPipeline:
             file_path = await self.upload_handler.save_audio_file(file, call_id)
             
             # Create call record in database
+            db_session = next(self._get_db())
             call_record = await self.upload_handler.create_call_record(
-                next(self._get_db()), file_path, file.filename
+                db_session, file_path, file.filename
             )
             
             # Update database status
@@ -319,6 +325,12 @@ class AudioProcessingPipeline:
                 "file_info": validation_result["file_info"],
                 "validation_passed": True,
                 "call_record_created": True
+            }
+            
+            # Store data for next steps
+            self.pipeline_data[call_id] = {
+                "file_path": file_path,
+                "file_info": validation_result["file_info"]
             }
             
             self.status_tracker.complete_step(call_id, "upload", result)
@@ -344,14 +356,26 @@ class AudioProcessingPipeline:
             # Update status
             await self.db_integration.update_call_status(call_id, "processing")
             
-            # Analyze audio
-            analysis_result = self.audio_processor.analyze_audio_file(file_path)
+            # Analyze audio with retry logic
+            analysis_result = await self._retry_operation(
+                lambda: self.audio_processor.analyze_audio_file(file_path),
+                operation_name="audio_analysis",
+                max_retries=3
+            )
             
-            # Convert audio if needed
-            conversion_result = self.audio_processor.convert_audio_format(file_path)
+            # Convert audio if needed with retry logic
+            conversion_result = await self._retry_operation(
+                lambda: self.audio_processor.convert_audio_format(file_path),
+                operation_name="audio_conversion",
+                max_retries=2
+            )
             
-            # Extract segments (optional)
-            segments_result = self.audio_processor.extract_audio_segments(file_path)
+            # Extract segments (optional) with retry logic
+            segments_result = await self._retry_operation(
+                lambda: self.audio_processor.extract_audio_segments(file_path),
+                operation_name="audio_segmentation",
+                max_retries=2
+            )
             
             result = {
                 "analysis": analysis_result,
@@ -359,6 +383,13 @@ class AudioProcessingPipeline:
                 "segments": segments_result,
                 "processed_file_path": conversion_result.get("output_path", file_path)
             }
+            
+            # Update pipeline data with processing results
+            if call_id in self.pipeline_data:
+                self.pipeline_data[call_id].update({
+                    "processed_file_path": conversion_result.get("output_path", file_path),
+                    "analysis_result": analysis_result
+                })
             
             self.status_tracker.complete_step(call_id, "audio_processing", result)
             return result
@@ -383,8 +414,12 @@ class AudioProcessingPipeline:
             # Update status
             await self.db_integration.update_call_status(call_id, "transcribing")
             
-            # Transcribe audio
-            transcription_result = self.whisper_processor.transcribe_audio(audio_path)
+            # Transcribe audio with retry logic
+            transcription_result = await self._retry_operation(
+                lambda: self.whisper_processor.transcribe_audio(audio_path),
+                operation_name="transcription",
+                max_retries=2
+            )
             
             # Save transcript
             transcript_path = self.whisper_processor.save_transcript(
@@ -415,11 +450,19 @@ class AudioProcessingPipeline:
         try:
             logger.info(f"Step 4: Storing results in database for call: {call_id}")
             
-            # Store transcript
-            transcript_result = await self.db_integration.store_transcript(call_id)
+            # Store transcript with retry logic
+            transcript_result = await self._retry_operation(
+                lambda: self.db_integration.store_transcript(call_id),
+                operation_name="transcript_storage",
+                max_retries=3
+            )
             
-            # Store analysis results
-            analysis_result = await self.db_integration.store_analysis(call_id)
+            # Store analysis results with retry logic
+            analysis_result = await self._retry_operation(
+                lambda: self.db_integration.store_analysis(call_id),
+                operation_name="analysis_storage",
+                max_retries=3
+            )
             
             # Update final status
             await self.db_integration.update_call_status(call_id, "completed")
@@ -437,6 +480,35 @@ class AudioProcessingPipeline:
             self.status_tracker.fail_step(call_id, "database_storage", e)
             await self.db_integration.update_call_status(call_id, "failed", error=str(e))
             raise
+    
+    async def _retry_operation(self, operation_func, operation_name: str, max_retries: int = 3) -> Any:
+        """
+        Retry an operation with exponential backoff.
+        
+        Args:
+            operation_func: Function to retry
+            operation_name: Name of the operation for logging
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            Result of the operation
+            
+        Raises:
+            Exception: If all retries fail
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info(f"Attempting {operation_name} (attempt {attempt + 1}/{max_retries + 1})")
+                return operation_func()
+                
+            except Exception as e:
+                if attempt == max_retries:
+                    logger.error(f"{operation_name} failed after {max_retries + 1} attempts: {e}")
+                    raise
+                
+                wait_time = 2 ** attempt  # Exponential backoff
+                logger.warning(f"{operation_name} failed (attempt {attempt + 1}), retrying in {wait_time}s: {e}")
+                await asyncio.sleep(wait_time)
     
     def _compile_pipeline_result(
         self, 
@@ -499,15 +571,46 @@ class AudioProcessingPipeline:
     
     async def _get_file_path(self, call_id: str) -> str:
         """Get file path from database"""
-        # This would typically query the database
-        # For now, we'll use a placeholder
-        return f"audio_uploads/{call_id}.wav"
+        try:
+            db_session = next(self._get_db())
+            call_record = db_session.query(Call).filter(Call.call_id == call_id).first()
+            
+            if not call_record:
+                raise ValueError(f"Call record not found for call_id: {call_id}")
+            
+            if not call_record.file_path:
+                raise ValueError(f"No file path found for call_id: {call_id}")
+            
+            logger.info(f"Retrieved file path for call {call_id}: {call_record.file_path}")
+            return call_record.file_path
+            
+        except Exception as e:
+            logger.error(f"Failed to get file path for call {call_id}: {e}")
+            raise
     
     async def _get_processed_audio_path(self, call_id: str) -> str:
-        """Get processed audio file path"""
-        # This would typically get the path from processing results
-        # For now, we'll use a placeholder
-        return f"audio_uploads/processed/{call_id}_converted.wav"
+        """Get processed audio file path from processing results"""
+        try:
+            # First try to get the original file path
+            original_path = await self._get_file_path(call_id)
+            
+            # Check if processed version exists
+            processed_dir = Path(settings.upload_dir) / "processed"
+            original_filename = Path(original_path).name
+            processed_filename = f"{Path(original_filename).stem}_converted.wav"
+            processed_path = processed_dir / processed_filename
+            
+            # If processed file doesn't exist, use original
+            if not processed_path.exists():
+                logger.info(f"Processed file not found, using original: {original_path}")
+                return original_path
+            
+            logger.info(f"Using processed audio file: {processed_path}")
+            return str(processed_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to get processed audio path for call {call_id}: {e}")
+            raise
     
     def _get_db(self):
         """Get database session"""
