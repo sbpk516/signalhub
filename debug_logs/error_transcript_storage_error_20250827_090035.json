@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-08-27T09:00:35.203501",
+  "operation": "transcript_storage_error",
+  "exception_type": "AttributeError",
+  "exception_message": "'Transcript' object has no attribute 'word_count'",
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/bsachi867/Documents/ai_ground/ signalhub/backend/app/db_integration.py\", line 183, in store_transcript\n    logger.info(f\"Text length: {transcript_record.word_count} words, {transcript_record.character_count} characters\")\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'Transcript' object has no attribute 'word_count'\n",
+  "context": {
+    "call_id": "7bbb8430-f415-4802-8ce0-59ac3ac0f29e",
+    "transcription_data_keys": [
+      "text",
+      "language",
+      "confidence_score",
+      "word_count",
+      "character_count",
+      "model_used",
+      "device_used",
+      "segments"
+    ]
+  },
+  "python_version": "3.12.2 | packaged by Anaconda, Inc. | (main, Feb 27 2024, 12:57:28) [Clang 14.0.6 ]",
+  "platform": "darwin"
+}

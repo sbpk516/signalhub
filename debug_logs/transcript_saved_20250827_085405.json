@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-08-27T08:54:05.286802",
+  "operation": "transcript_saved",
+  "data": {
+    "call_id": "19598b13-b9f9-4900-94b7-cfd32a833fca",
+    "transcript_path": "audio_uploads/transcripts/2025/08/27/19598b13-b9f9-4900-94b7-cfd32a833fca_transcript.json",
+    "file_size_bytes": 671,
+    "word_count": 0
+  },
+  "python_version": "3.12.2 | packaged by Anaconda, Inc. | (main, Feb 27 2024, 12:57:28) [Clang 14.0.6 ]",
+  "platform": "darwin"
+}

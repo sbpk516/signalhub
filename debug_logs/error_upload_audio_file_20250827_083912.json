@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-08-27T08:39:12.290528",
+  "operation": "upload_audio_file",
+  "exception_type": "AttributeError",
+  "exception_message": "'Depends' object has no attribute 'rollback'",
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/bsachi867/Documents/ai_ground/ signalhub/backend/app/upload.py\", line 141, in create_call_record\n    db.add(call)\n    ^^^^^^\nAttributeError: 'Depends' object has no attribute 'add'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/bsachi867/Documents/ai_ground/ signalhub/backend/app/upload.py\", line 197, in upload_audio_file\n    call = await upload_handler.create_call_record(db, file_path, file.filename)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/bsachi867/Documents/ai_ground/ signalhub/backend/app/upload.py\", line 149, in create_call_record\n    db.rollback()\n    ^^^^^^^^^^^\nAttributeError: 'Depends' object has no attribute 'rollback'\n",
+  "context": {
+    "filename": "test_upload.wav"
+  },
+  "python_version": "3.12.2 | packaged by Anaconda, Inc. | (main, Feb 27 2024, 12:57:28) [Clang 14.0.6 ]",
+  "platform": "darwin"
+}

@@ -1,0 +1,10 @@
+{
+  "timestamp": "2025-08-27T08:50:43.091653",
+  "operation": "ffmpeg_verification",
+  "data": {
+    "status": "success",
+    "version": "ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers"
+  },
+  "python_version": "3.12.2 | packaged by Anaconda, Inc. | (main, Feb 27 2024, 12:57:28) [Clang 14.0.6 ]",
+  "platform": "darwin"
+}

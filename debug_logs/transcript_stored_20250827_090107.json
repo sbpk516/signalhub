@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-08-27T09:01:07.875952",
+  "operation": "transcript_stored",
+  "data": {
+    "call_id": "7bbb8430-f415-4802-8ce0-59ac3ac0f29e",
+    "transcript_id": 2,
+    "word_count": 9,
+    "confidence": 85,
+    "language": "en"
+  },
+  "python_version": "3.12.2 | packaged by Anaconda, Inc. | (main, Feb 27 2024, 12:57:28) [Clang 14.0.6 ]",
+  "platform": "darwin"
+}

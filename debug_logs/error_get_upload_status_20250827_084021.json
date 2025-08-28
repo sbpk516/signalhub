@@ -1,0 +1,12 @@
+{
+  "timestamp": "2025-08-27T08:40:21.087738",
+  "operation": "get_upload_status",
+  "exception_type": "AttributeError",
+  "exception_message": "'Depends' object has no attribute 'query'",
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/bsachi867/Documents/ai_ground/ signalhub/backend/app/upload.py\", line 244, in get_upload_status\n    call = db.query(Call).filter(Call.call_id == call_id).first()\n           ^^^^^^^^\nAttributeError: 'Depends' object has no attribute 'query'\n",
+  "context": {
+    "call_id": "7bbb8430-f415-4802-8ce0-59ac3ac0f29e"
+  },
+  "python_version": "3.12.2 | packaged by Anaconda, Inc. | (main, Feb 27 2024, 12:57:28) [Clang 14.0.6 ]",
+  "platform": "darwin"
+}
