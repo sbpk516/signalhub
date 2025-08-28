@@ -13,6 +13,8 @@ from .config import settings
 from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
 from .upload import upload_audio_file, get_upload_status
+from .pipeline_orchestrator import AudioProcessingPipeline
+from .debug_utils import debug_helper
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -174,6 +176,83 @@ async def get_call_status(call_id: str):
     Returns the current status and metadata for a specific call.
     """
     return await get_upload_status(call_id)
+
+
+# ============================================================================
+# PHASE 1.3: ENHANCED PIPELINE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/pipeline/upload")
+async def pipeline_upload_endpoint(file: UploadFile = File(...)):
+    """
+    Enhanced upload endpoint with complete pipeline processing.
+    
+    This endpoint processes audio through the complete pipeline:
+    Upload → Audio Processing → Transcription → Database Storage
+    """
+    try:
+        # Initialize pipeline
+        pipeline = AudioProcessingPipeline()
+        
+        # Process audio through complete pipeline
+        result = await pipeline.process_audio_file(file)
+        
+        return {
+            "message": "Audio file processed successfully through complete pipeline",
+            "call_id": result["call_id"],
+            "status": "completed",
+            "pipeline_summary": result["pipeline_summary"],
+            "processing_timeline": result["processing_timeline"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Pipeline processing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/pipeline/{call_id}/status")
+async def get_pipeline_status(call_id: str):
+    """
+    Get detailed pipeline status for debugging.
+    
+    Returns comprehensive status information for each step in the pipeline.
+    """
+    try:
+        pipeline = AudioProcessingPipeline()
+        status = pipeline.get_pipeline_status(call_id)
+        
+        return {
+            "call_id": call_id,
+            "pipeline_status": status,
+            "debug_info": pipeline.get_debug_info(call_id)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get pipeline status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/pipeline/{call_id}/debug")
+async def get_pipeline_debug(call_id: str):
+    """
+    Get comprehensive debug information for troubleshooting.
+    
+    Returns detailed debug logs, timings, and error information.
+    """
+    try:
+        pipeline = AudioProcessingPipeline()
+        debug_info = pipeline.get_debug_info(call_id)
+        
+        return {
+            "call_id": call_id,
+            "debug_info": debug_info,
+            "debug_logs": debug_helper.get_debug_info(call_id),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get debug info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
