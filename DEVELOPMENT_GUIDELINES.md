@@ -87,7 +87,7 @@ python -c "import app"  # backend import test
 tail -f logs/signalhub.log
 
 # Check status
-curl http://localhost:8000/health  # backend
+curl Yeah. http://localhost:8000/health  # backend
 curl http://localhost:3000/src/main.tsx  # frontend
 
 # Check processes
