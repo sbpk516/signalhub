@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Button, Card } from './index'
-import { Logo, Navigation } from '../Header'
+import { Logo, Navigation, Header } from '../Header'
+import { Sidebar } from '../Sidebar'
 
 const ComponentTestSuite: React.FC = () => {
   const [clickCounts, setClickCounts] = useState<Record<string, number>>({})
@@ -18,6 +19,18 @@ const ComponentTestSuite: React.FC = () => {
 
   const handlePageChange = (page: 'dashboard' | 'upload' | 'results') => {
     handleClick(`nav-${page}`)
+  }
+
+  const handleHeaderLogoClick = () => {
+    handleClick('header-logo')
+  }
+
+  const handleSidebarItemClick = (item: string) => {
+    handleClick(`sidebar-${item}`)
+  }
+
+  const handleSidebarToggle = () => {
+    handleClick('sidebar-toggle')
   }
 
   return (
@@ -97,6 +110,116 @@ const ComponentTestSuite: React.FC = () => {
                 <p>Dashboard clicks: {clickCounts['nav-dashboard'] || 0}</p>
                 <p>Upload clicks: {clickCounts['nav-upload'] || 0}</p>
                 <p>Results clicks: {clickCounts['nav-results'] || 0}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+      
+      {/* Header Tests */}
+      <Card title="Header Component Tests">
+        <div className="space-y-6">
+          {/* Header with Default State */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Header - Default State</h3>
+            <Header onLogoClick={handleHeaderLogoClick} onPageChange={handlePageChange} />
+            <p className="text-xs text-gray-500 mt-2">Logo on left, Navigation on right, Dashboard active</p>
+          </div>
+
+          {/* Header with Different Active States */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Header - Active States</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Upload</p>
+                <Header activePage="upload" onLogoClick={handleHeaderLogoClick} onPageChange={handlePageChange} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Results</p>
+                <Header activePage="results" onLogoClick={handleHeaderLogoClick} onPageChange={handlePageChange} />
+              </div>
+            </div>
+          </div>
+
+          {/* Header Click Counters */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Header Interactions</h3>
+            <div className="space-y-2">
+              <Header onLogoClick={handleHeaderLogoClick} onPageChange={handlePageChange} />
+              <div className="text-sm text-gray-600">
+                <p>Header logo clicks: {clickCounts['header-logo'] || 0}</p>
+                <p>Navigation clicks: {clickCounts['nav-dashboard'] || 0} | {clickCounts['nav-upload'] || 0} | {clickCounts['nav-results'] || 0}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+      
+      {/* Sidebar Tests */}
+      <Card title="Sidebar Component Tests">
+        <div className="space-y-6">
+          {/* Sidebar with Default State */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Sidebar - Default State</h3>
+            <div className="flex">
+              <Sidebar onItemClick={handleSidebarItemClick} onToggle={handleSidebarToggle} />
+              <div className="ml-4 p-4 bg-gray-100 rounded">
+                <p className="text-sm text-gray-600">Content area (sidebar is open)</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar with Different Active States */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Sidebar - Active States</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Analytics</p>
+                <div className="flex">
+                  <Sidebar activeItem="analytics" onItemClick={handleSidebarItemClick} onToggle={handleSidebarToggle} />
+                  <div className="ml-4 p-4 bg-gray-100 rounded">
+                    <p className="text-sm text-gray-600">Content area</p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Settings</p>
+                <div className="flex">
+                  <Sidebar activeItem="settings" onItemClick={handleSidebarItemClick} onToggle={handleSidebarToggle} />
+                  <div className="ml-4 p-4 bg-gray-100 rounded">
+                    <p className="text-sm text-gray-600">Content area</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar Closed State */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Sidebar - Closed State</h3>
+            <div className="flex">
+              <Sidebar isOpen={false} onItemClick={handleSidebarItemClick} onToggle={handleSidebarToggle} />
+              <div className="ml-4 p-4 bg-gray-100 rounded">
+                <p className="text-sm text-gray-600">Content area (sidebar is closed)</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar Click Counters */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Sidebar Interactions</h3>
+            <div className="space-y-2">
+              <div className="flex">
+                <Sidebar onItemClick={handleSidebarItemClick} onToggle={handleSidebarToggle} />
+                <div className="ml-4 p-4 bg-gray-100 rounded">
+                  <div className="text-sm text-gray-600">
+                    <p>Sidebar toggle clicks: {clickCounts['sidebar-toggle'] || 0}</p>
+                    <p>Dashboard clicks: {clickCounts['sidebar-dashboard'] || 0}</p>
+                    <p>Analytics clicks: {clickCounts['sidebar-analytics'] || 0}</p>
+                    <p>Settings clicks: {clickCounts['sidebar-settings'] || 0}</p>
+                    <p>Help clicks: {clickCounts['sidebar-help'] || 0}</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
