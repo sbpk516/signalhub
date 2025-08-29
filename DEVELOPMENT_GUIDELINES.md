@@ -1,4 +1,4 @@
-# Development Guidelines - SignalHub
+cd fron# Development Guidelines - SignalHub
 
 ## 🎯 **CORE DEVELOPMENT PRINCIPLES**
 
