@@ -1,12 +1,12 @@
 import React from 'react'
-import ComponentTestSuite from './components/Shared/ComponentTestSuite'
-import './App.css'
+import { Layout } from './components/Layout'
+import Dashboard from './pages/Dashboard'
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ComponentTestSuite />
-    </div>
+    <Layout>
+      <Dashboard />
+    </Layout>
   )
 }
 
