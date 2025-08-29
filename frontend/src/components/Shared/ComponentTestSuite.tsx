@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Button, Card } from './index'
-import { Logo } from '../Header'
+import { Logo, Navigation } from '../Header'
 
 const ComponentTestSuite: React.FC = () => {
   const [clickCounts, setClickCounts] = useState<Record<string, number>>({})
@@ -14,6 +14,10 @@ const ComponentTestSuite: React.FC = () => {
 
   const handleLogoClick = () => {
     handleClick('logo')
+  }
+
+  const handlePageChange = (page: 'dashboard' | 'upload' | 'results') => {
+    handleClick(`nav-${page}`)
   }
 
   return (
@@ -50,6 +54,50 @@ const ComponentTestSuite: React.FC = () => {
               <span className="text-sm text-gray-600">
                 Logo clicks: {clickCounts.logo || 0}
               </span>
+            </div>
+          </div>
+        </div>
+      </Card>
+      
+      {/* Navigation Tests */}
+      <Card title="Navigation Component Tests">
+        <div className="space-y-6">
+          {/* Navigation with Default State */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Navigation - Default State</h3>
+            <Navigation onPageChange={handlePageChange} />
+            <p className="text-xs text-gray-500 mt-2">Dashboard should be active by default</p>
+          </div>
+
+          {/* Navigation with Different Active States */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Navigation - Active States</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Dashboard</p>
+                <Navigation activePage="dashboard" onPageChange={handlePageChange} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Upload</p>
+                <Navigation activePage="upload" onPageChange={handlePageChange} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Active: Results</p>
+                <Navigation activePage="results" onPageChange={handlePageChange} />
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Click Counter */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Navigation Interactions</h3>
+            <div className="space-y-2">
+              <Navigation onPageChange={handlePageChange} />
+              <div className="text-sm text-gray-600">
+                <p>Dashboard clicks: {clickCounts['nav-dashboard'] || 0}</p>
+                <p>Upload clicks: {clickCounts['nav-upload'] || 0}</p>
+                <p>Results clicks: {clickCounts['nav-results'] || 0}</p>
+              </div>
             </div>
           </div>
         </div>
