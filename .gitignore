@@ -190,3 +190,7 @@ frontend/.parcel-cache/
 frontend/.eslintcache
 frontend/.stylelintcache
 frontend/.swc/
+
+# Cursor AI Development Files (Local only)
+CURSOR_INSTRUCTIONS.md
+DEVELOPMENT_GUIDELINES.md
