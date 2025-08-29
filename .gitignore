@@ -151,4 +151,18 @@ setup-git-aliases.sh
 troubleshoot-git-accounts.sh
 MULTIPLE_GITHUB_ACCOUNTS_CONCEPT_GUIDE.md
 GIT_ACCOUNT_MANAGER_GUIDE.md
-PHASE_1.3_IMPLEMENTATION_STRATEGY.md
+
+# Debug logs (Local only)
+debug_logs/
+backend/debug_logs/
+
+# Test files (Local only)
+test_*.py
+check_*.py
+*.aiff
+*.wav
+sample_*.wav
+speech_*.wav
+complaint.*
+sales_*.wav
+support_*.wav

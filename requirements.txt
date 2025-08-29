@@ -19,3 +19,5 @@ pytest-asyncio==0.21.1
 
 # Monitoring
 psutil==5.9.6
+vaderSentiment==3.3.2
+nltk==3.8.1

@@ -51,8 +51,13 @@ class Analysis(Base):
     id = Column(Integer, primary_key=True, index=True)
     call_id = Column(String(100), index=True, nullable=False)
     intent = Column(String(100))
+    intent_confidence = Column(Integer)  # 0-100 confidence score
     sentiment = Column(String(50))  # positive, negative, neutral
     sentiment_score = Column(Integer)  # -100 to 100
     escalation_risk = Column(String(50))  # low, medium, high
     risk_score = Column(Integer)  # 0 to 100
+    keywords = Column(Text)  # JSON array of keywords
+    topics = Column(Text)  # JSON array of topics
+    urgency_level = Column(String(50))  # low, medium, high, critical
+    compliance_risk = Column(String(50))  # none, low, medium, high
     created_at = Column(DateTime(timezone=True), server_default=func.now())

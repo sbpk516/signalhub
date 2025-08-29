@@ -1,0 +1,504 @@
+"""
+NLP Processor for SignalHub Phase 3: NLP Analysis.
+
+This module provides core NLP processing capabilities including:
+- Text preprocessing and cleaning
+- Model loading and caching
+- Basic text analysis utilities
+- Integration with existing pipeline
+"""
+
+import json
+import logging
+import asyncio
+from typing import Dict, List, Any, Optional, Tuple
+from pathlib import Path
+import re
+import string
+
+# NLP Libraries
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.stem import WordNetLemmatizer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# Local imports
+from .debug_utils import debug_helper
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class NLPProcessor:
+    """
+    Core NLP processor for text analysis and insights extraction.
+    
+    This class provides the foundation for all NLP operations in SignalHub,
+    including text preprocessing, model management, and basic analysis.
+    """
+    
+    def __init__(self):
+        """Initialize the NLP processor with models and utilities."""
+        self.logger = logger
+        self.models_loaded = False
+        self.models = {}
+        self.cache = {}
+        
+        # Initialize NLTK components
+        self._initialize_nltk()
+        
+        # Initialize sentiment analyzer
+        self.sentiment_analyzer = SentimentIntensityAnalyzer()
+        
+        # Intent classification patterns (rule-based for now)
+        self.intent_patterns = {
+            'customer support request': [
+                'help', 'support', 'assist', 'problem', 'issue', 'trouble',
+                'broken', 'not working', 'error', 'fix', 'repair'
+            ],
+            'sales inquiry': [
+                'price', 'cost', 'buy', 'purchase', 'order', 'quote',
+                'discount', 'deal', 'offer', 'sale', 'promotion'
+            ],
+            'complaint or issue': [
+                'complaint', 'angry', 'furious', 'unhappy', 'dissatisfied',
+                'wrong', 'bad', 'terrible', 'horrible', 'unacceptable'
+            ],
+            'general information': [
+                'what', 'how', 'when', 'where', 'why', 'information',
+                'details', 'explain', 'tell me', 'question'
+            ],
+            'appointment booking': [
+                'appointment', 'schedule', 'book', 'reservation', 'meeting',
+                'time', 'date', 'calendar', 'available'
+            ],
+            'technical problem': [
+                'technical', 'system', 'software', 'hardware', 'network',
+                'connection', 'login', 'password', 'access', 'download'
+            ],
+            'billing question': [
+                'bill', 'payment', 'charge', 'invoice', 'account',
+                'money', 'refund', 'credit', 'debit', 'subscription'
+            ],
+            'product inquiry': [
+                'product', 'feature', 'specification', 'model', 'version',
+                'compatibility', 'requirement', 'specs'
+            ]
+        }
+        
+        self.logger.info("NLP Processor initialized successfully")
+    
+    def _initialize_nltk(self):
+        """Initialize NLTK components and download required data."""
+        try:
+            # Download required NLTK data
+            nltk.download('punkt', quiet=True)
+            nltk.download('stopwords', quiet=True)
+            nltk.download('wordnet', quiet=True)
+            nltk.download('averaged_perceptron_tagger', quiet=True)
+            
+            # Initialize NLTK components
+            self.stop_words = set(stopwords.words('english'))
+            self.lemmatizer = WordNetLemmatizer()
+            
+            self.logger.info("NLTK components initialized successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize NLTK: {e}")
+            debug_helper.capture_exception("nlp_nltk_init", e, {})
+            raise
+    
+    async def load_models(self):
+        """Load and cache NLP models asynchronously."""
+        if self.models_loaded:
+            return
+        
+        try:
+            self.logger.info("Loading NLP models...")
+            
+            # For now, we're using rule-based approach
+            # In future, this can be replaced with ML models
+            self.models_loaded = True
+            self.logger.info("NLP models loaded successfully (rule-based)")
+            
+            debug_helper.log_debug_info(
+                "nlp_models_loaded",
+                {"models_loaded": ["rule_based_intent", "vader_sentiment"]}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load NLP models: {e}")
+            debug_helper.capture_exception("nlp_models_load", e, {})
+            raise
+    
+    def preprocess_text(self, text: str) -> str:
+        """
+        Preprocess and clean text for analysis.
+        
+        Args:
+            text: Raw text to preprocess
+            
+        Returns:
+            Cleaned and preprocessed text
+        """
+        try:
+            if not text or not isinstance(text, str):
+                return ""
+            
+            # Convert to lowercase
+            text = text.lower()
+            
+            # Remove special characters but keep basic punctuation
+            text = re.sub(r'[^\w\s\.\,\!\?\-]', '', text)
+            
+            # Remove extra whitespace
+            text = re.sub(r'\s+', ' ', text).strip()
+            
+            # Remove leading/trailing punctuation
+            text = text.strip(string.punctuation)
+            
+            return text
+            
+        except Exception as e:
+            self.logger.error(f"Error preprocessing text: {e}")
+            debug_helper.capture_exception("nlp_preprocess", e, {"text_length": len(text) if text else 0})
+            return text if text else ""
+    
+    def extract_keywords(self, text: str, max_keywords: int = 10) -> List[str]:
+        """
+        Extract key terms and phrases from text.
+        
+        Args:
+            text: Input text
+            max_keywords: Maximum number of keywords to extract
+            
+        Returns:
+            List of extracted keywords
+        """
+        try:
+            if not text:
+                return []
+            
+            # Preprocess text
+            clean_text = self.preprocess_text(text)
+            
+            # Tokenize
+            tokens = word_tokenize(clean_text)
+            
+            # Remove stop words and short tokens
+            keywords = [
+                token for token in tokens 
+                if token.lower() not in self.stop_words 
+                and len(token) > 2
+                and not token.isnumeric()
+            ]
+            
+            # Lemmatize
+            keywords = [self.lemmatizer.lemmatize(token) for token in keywords]
+            
+            # Count frequency
+            from collections import Counter
+            keyword_freq = Counter(keywords)
+            
+            # Return top keywords
+            return [keyword for keyword, _ in keyword_freq.most_common(max_keywords)]
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting keywords: {e}")
+            debug_helper.capture_exception("nlp_keywords", e, {"text_length": len(text) if text else 0})
+            return []
+    
+    def analyze_sentiment_vader(self, text: str) -> Dict[str, Any]:
+        """
+        Analyze sentiment using VADER sentiment analyzer.
+        
+        Args:
+            text: Input text
+            
+        Returns:
+            Dictionary with sentiment scores and classification
+        """
+        try:
+            if not text:
+                return {
+                    "sentiment": "neutral",
+                    "sentiment_score": 0,
+                    "compound_score": 0,
+                    "positive_score": 0,
+                    "negative_score": 0,
+                    "neutral_score": 0
+                }
+            
+            # Get sentiment scores
+            scores = self.sentiment_analyzer.polarity_scores(text)
+            
+            # Determine sentiment classification
+            compound_score = scores['compound']
+            if compound_score >= 0.05:
+                sentiment = "positive"
+                sentiment_score = int(compound_score * 100)
+            elif compound_score <= -0.05:
+                sentiment = "negative"
+                sentiment_score = int(compound_score * 100)
+            else:
+                sentiment = "neutral"
+                sentiment_score = 0
+            
+            return {
+                "sentiment": sentiment,
+                "sentiment_score": sentiment_score,
+                "compound_score": compound_score,
+                "positive_score": scores['pos'],
+                "negative_score": scores['neg'],
+                "neutral_score": scores['neu']
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing sentiment: {e}")
+            debug_helper.capture_exception("nlp_sentiment", e, {"text_length": len(text) if text else 0})
+            return {
+                "sentiment": "neutral",
+                "sentiment_score": 0,
+                "compound_score": 0,
+                "positive_score": 0,
+                "negative_score": 0,
+                "neutral_score": 0
+            }
+    
+    async def detect_intent(self, text: str, candidate_labels: List[str]) -> Dict[str, Any]:
+        """
+        Detect intent using rule-based pattern matching.
+        
+        Args:
+            text: Input text
+            candidate_labels: List of possible intent labels (not used in rule-based)
+            
+        Returns:
+            Dictionary with detected intent and confidence
+        """
+        try:
+            if not self.models_loaded:
+                await self.load_models()
+            
+            if not text:
+                return {
+                    "intent": "unknown",
+                    "confidence": 0.0,
+                    "candidates": []
+                }
+            
+            # Convert text to lowercase for pattern matching
+            text_lower = text.lower()
+            
+            # Score each intent based on keyword matches
+            intent_scores = {}
+            for intent, keywords in self.intent_patterns.items():
+                score = 0
+                for keyword in keywords:
+                    if keyword in text_lower:
+                        score += 1
+                intent_scores[intent] = score
+            
+            # Find the intent with highest score
+            if intent_scores:
+                best_intent = max(intent_scores, key=intent_scores.get)
+                best_score = intent_scores[best_intent]
+                
+                # Convert score to confidence (0-1 scale)
+                max_possible_score = max(len(keywords) for keywords in self.intent_patterns.values())
+                confidence = min(1.0, best_score / max_possible_score) if max_possible_score > 0 else 0.0
+                
+                # If no keywords matched, default to general information
+                if best_score == 0:
+                    best_intent = "general information"
+                    confidence = 0.1
+            else:
+                best_intent = "general information"
+                confidence = 0.1
+            
+            # Format candidates
+            candidates = [
+                {"label": intent, "score": score / max(len(keywords) for keywords in self.intent_patterns.values())}
+                for intent, score in intent_scores.items()
+            ]
+            
+            return {
+                "intent": best_intent,
+                "confidence": confidence,
+                "candidates": candidates
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting intent: {e}")
+            debug_helper.capture_exception("nlp_intent", e, {
+                "text_length": len(text) if text else 0
+            })
+            return {
+                "intent": "unknown",
+                "confidence": 0.0,
+                "candidates": []
+            }
+    
+    def assess_risk(self, text: str, sentiment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Assess risk level based on text content and sentiment.
+        
+        Args:
+            text: Input text
+            sentiment_data: Sentiment analysis results
+            
+        Returns:
+            Dictionary with risk assessment
+        """
+        try:
+            # Initialize risk scores
+            escalation_risk = "low"
+            risk_score = 0
+            urgency_level = "low"
+            compliance_risk = "none"
+            
+            # Risk indicators
+            high_risk_keywords = [
+                'urgent', 'emergency', 'critical', 'immediately', 'asap',
+                'complaint', 'sue', 'lawyer', 'legal', 'escalate',
+                'cancel', 'refund', 'money back', 'dispute', 'wrong',
+                'angry', 'furious', 'unacceptable', 'terrible', 'horrible'
+            ]
+            
+            compliance_keywords = [
+                'privacy', 'data', 'personal', 'confidential', 'secure',
+                'breach', 'hack', 'unauthorized', 'access', 'information'
+            ]
+            
+            urgency_keywords = [
+                'urgent', 'emergency', 'critical', 'immediately', 'asap',
+                'now', 'today', 'deadline', 'time sensitive'
+            ]
+            
+            # Check for risk indicators
+            text_lower = text.lower()
+            
+            # Escalation risk
+            high_risk_count = sum(1 for keyword in high_risk_keywords if keyword in text_lower)
+            if high_risk_count >= 3:
+                escalation_risk = "high"
+                risk_score = 80
+            elif high_risk_count >= 1:
+                escalation_risk = "medium"
+                risk_score = 50
+            
+            # Urgency level
+            urgency_count = sum(1 for keyword in urgency_keywords if keyword in text_lower)
+            if urgency_count >= 2:
+                urgency_level = "critical"
+            elif urgency_count >= 1:
+                urgency_level = "high"
+            
+            # Compliance risk
+            compliance_count = sum(1 for keyword in compliance_keywords if keyword in text_lower)
+            if compliance_count >= 2:
+                compliance_risk = "high"
+            elif compliance_count >= 1:
+                compliance_risk = "medium"
+            
+            # Adjust based on sentiment
+            if sentiment_data.get('sentiment') == 'negative':
+                risk_score = min(100, risk_score + 20)
+                if escalation_risk == "low":
+                    escalation_risk = "medium"
+            
+            return {
+                "escalation_risk": escalation_risk,
+                "risk_score": risk_score,
+                "urgency_level": urgency_level,
+                "compliance_risk": compliance_risk
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error assessing risk: {e}")
+            debug_helper.capture_exception("nlp_risk", e, {"text_length": len(text) if text else 0})
+            return {
+                "escalation_risk": "low",
+                "risk_score": 0,
+                "urgency_level": "low",
+                "compliance_risk": "none"
+            }
+    
+    async def analyze_text(self, text: str, call_id: str) -> Dict[str, Any]:
+        """
+        Perform comprehensive text analysis.
+        
+        Args:
+            text: Input text to analyze
+            call_id: Call identifier for logging
+            
+        Returns:
+            Dictionary with complete analysis results
+        """
+        try:
+            self.logger.info(f"Starting comprehensive text analysis for call {call_id}")
+            
+            # Ensure models are loaded
+            if not self.models_loaded:
+                await self.load_models()
+            
+            # Preprocess text
+            clean_text = self.preprocess_text(text)
+            
+            # Extract keywords
+            keywords = self.extract_keywords(clean_text)
+            
+            # Analyze sentiment
+            sentiment_data = self.analyze_sentiment_vader(clean_text)
+            
+            # Detect intent (using common customer service intents)
+            intent_labels = [
+                "customer support request",
+                "sales inquiry", 
+                "complaint or issue",
+                "general information",
+                "appointment booking",
+                "technical problem",
+                "billing question",
+                "product inquiry"
+            ]
+            intent_data = await self.detect_intent(clean_text, intent_labels)
+            
+            # Assess risk
+            risk_data = self.assess_risk(clean_text, sentiment_data)
+            
+            # Compile results
+            analysis_result = {
+                "call_id": call_id,
+                "text_length": len(text),
+                "clean_text_length": len(clean_text),
+                "keywords": keywords,
+                "sentiment": sentiment_data,
+                "intent": intent_data,
+                "risk": risk_data,
+                "analysis_timestamp": asyncio.get_event_loop().time()
+            }
+            
+            self.logger.info(f"Text analysis completed for call {call_id}")
+            debug_helper.log_debug_info(
+                "nlp_analysis_complete",
+                {
+                    "call_id": call_id,
+                    "text_length": len(text),
+                    "intent": intent_data.get("intent"),
+                    "sentiment": sentiment_data.get("sentiment"),
+                    "risk_level": risk_data.get("escalation_risk")
+                }
+            )
+            
+            return analysis_result
+            
+        except Exception as e:
+            self.logger.error(f"Error in comprehensive text analysis: {e}")
+            debug_helper.capture_exception("nlp_comprehensive_analysis", e, {"call_id": call_id})
+            raise
+
+
+# Global instance
+nlp_processor = NLPProcessor()

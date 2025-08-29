@@ -18,6 +18,7 @@ from .upload import AudioUploadHandler
 from .audio_processor import AudioProcessor
 from .whisper_processor import WhisperProcessor
 from .db_integration import DatabaseIntegration
+from .nlp_processor import nlp_processor
 from .debug_utils import debug_helper
 from .logging_config import log_function_call, PerformanceMonitor
 from .models import Call
@@ -277,13 +278,16 @@ class AudioProcessingPipeline:
             # Step 3: Transcription
             transcription_result = await self._step_transcription(call_id)
             
-            # Step 4: Database Storage
+            # Step 4: NLP Analysis
+            nlp_result = await self._step_nlp_analysis(call_id)
+            
+            # Step 5: Database Storage
             storage_result = await self._step_database_storage(call_id)
             
             # Compile final result
             final_result = self._compile_pipeline_result(
                 call_id, upload_result, processing_result, 
-                transcription_result, storage_result
+                transcription_result, nlp_result, storage_result
             )
             
             # Log pipeline completion
@@ -453,6 +457,17 @@ class AudioProcessingPipeline:
                 "language": transcription_result.get("language", "unknown")
             }
             
+            # DEBUG: Log what we're storing in pipeline data
+            logger.info(f"DEBUG: Storing transcription result in pipeline_data for {call_id}")
+            logger.info(f"DEBUG: Transcription text length: {len(result['transcription_text'])}")
+            logger.info(f"DEBUG: First 100 chars: {result['transcription_text'][:100]}")
+            
+            # Store transcription data in pipeline_data for NLP step
+            if call_id not in self.pipeline_data:
+                self.pipeline_data[call_id] = {}
+            self.pipeline_data[call_id]["transcription_data"] = transcription_result
+            self.pipeline_data[call_id]["transcription_result"] = result
+            
             self.status_tracker.complete_step(call_id, "transcription", result)
             
             # Update monitoring
@@ -463,6 +478,84 @@ class AudioProcessingPipeline:
         except Exception as e:
             self.status_tracker.fail_step(call_id, "transcription", e)
             self.db_integration.update_call_status(call_id, "failed", additional_data={"error": str(e)})
+            raise
+    
+    async def _step_nlp_analysis(self, call_id: str) -> Dict[str, Any]:
+        """
+        Step 4: Perform NLP analysis on transcribed text
+        """
+        self.status_tracker.start_step(call_id, "nlp_analysis")
+        
+        try:
+            logger.info(f"Step 4: Performing NLP analysis for call: {call_id}")
+            
+            # DEBUG: Log pipeline data structure
+            logger.info(f"DEBUG: Pipeline data keys for {call_id}: {list(self.pipeline_data.get(call_id, {}).keys())}")
+            
+            # Get transcribed text from pipeline data
+            if call_id in self.pipeline_data and "transcription_data" in self.pipeline_data[call_id]:
+                transcription_data = self.pipeline_data[call_id]["transcription_data"]
+                text = transcription_data.get("text", "")
+                logger.info(f"DEBUG: Found transcription_data, text length: {len(text)}")
+                logger.info(f"DEBUG: First 100 chars of text: {text[:100]}")
+            else:
+                text = ""
+                logger.warning(f"DEBUG: No transcription_data found in pipeline_data for {call_id}")
+                # Try to get from transcription result directly
+                if call_id in self.pipeline_data and "transcription_result" in self.pipeline_data[call_id]:
+                    transcription_result = self.pipeline_data[call_id]["transcription_result"]
+                    text = transcription_result.get("transcription_text", "")
+                    logger.info(f"DEBUG: Found transcription_result, text length: {len(text)}")
+                    logger.info(f"DEBUG: First 100 chars of text: {text[:100]}")
+                else:
+                    logger.warning(f"DEBUG: No transcription_result found either for {call_id}")
+            
+            if not text:
+                logger.warning(f"No text available for NLP analysis in call: {call_id}")
+                result = {
+                    "nlp_analysis_completed": False,
+                    "error": "No text available for analysis",
+                    "analysis_data": {}
+                }
+                self.status_tracker.complete_step(call_id, "nlp_analysis", result)
+                return result
+            
+            # Perform comprehensive NLP analysis
+            nlp_analysis = await nlp_processor.analyze_text(text, call_id)
+            
+            # DEBUG: Log NLP analysis results
+            logger.info(f"DEBUG: NLP analysis completed for {call_id}")
+            logger.info(f"DEBUG: NLP analysis keys: {list(nlp_analysis.keys())}")
+            logger.info(f"DEBUG: Intent: {nlp_analysis.get('intent', {})}")
+            logger.info(f"DEBUG: Sentiment: {nlp_analysis.get('sentiment', {})}")
+            logger.info(f"DEBUG: Risk: {nlp_analysis.get('risk', {})}")
+            
+            # Store NLP results in pipeline data
+            if call_id not in self.pipeline_data:
+                self.pipeline_data[call_id] = {}
+            self.pipeline_data[call_id]["nlp_analysis"] = nlp_analysis
+            
+            result = {
+                "nlp_analysis_completed": True,
+                "analysis_data": nlp_analysis,
+                "text_length": len(text),
+                "intent": nlp_analysis.get("intent", {}).get("intent", "unknown"),
+                "sentiment": nlp_analysis.get("sentiment", {}).get("sentiment", "neutral"),
+                "risk_level": nlp_analysis.get("risk", {}).get("escalation_risk", "low")
+            }
+            
+            # DEBUG: Log final result
+            logger.info(f"DEBUG: Final NLP result for {call_id}: intent={result['intent']}, sentiment={result['sentiment']}, risk={result['risk_level']}")
+            
+            self.status_tracker.complete_step(call_id, "nlp_analysis", result)
+            
+            # Update monitoring
+            pipeline_monitor.update_pipeline_step(call_id, "nlp_analysis", "completed", 
+                                                self.status_tracker.step_timings[call_id]["nlp_analysis"]["duration_seconds"])
+            return result
+            
+        except Exception as e:
+            self.status_tracker.fail_step(call_id, "nlp_analysis", e)
             raise
     
     async def _step_database_storage(self, call_id: str) -> Dict[str, Any]:
@@ -500,12 +593,31 @@ class AudioProcessingPipeline:
                 max_retries=3
             )
             
+            # Store NLP analysis results with retry logic
+            # Get NLP data from pipeline data
+            if call_id in self.pipeline_data and "nlp_analysis" in self.pipeline_data[call_id]:
+                nlp_data = self.pipeline_data[call_id]["nlp_analysis"]
+            else:
+                nlp_data = {
+                    "intent": {"intent": "unknown", "confidence": 0.0},
+                    "sentiment": {"sentiment": "neutral", "sentiment_score": 0},
+                    "risk": {"escalation_risk": "low", "risk_score": 0},
+                    "keywords": []
+                }
+            
+            nlp_result = await self._retry_operation(
+                lambda: self.db_integration.store_nlp_analysis(call_id, nlp_data),
+                operation_name="nlp_analysis_storage",
+                max_retries=3
+            )
+            
             # Update final status
             self.db_integration.update_call_status(call_id, "completed")
             
             result = {
                 "transcript_stored": transcript_result,
                 "analysis_stored": analysis_result,
+                "nlp_analysis_stored": nlp_result,
                 "database_operations_completed": True
             }
             
@@ -556,6 +668,7 @@ class AudioProcessingPipeline:
         upload_result: Dict, 
         processing_result: Dict, 
         transcription_result: Dict, 
+        nlp_result: Dict,
         storage_result: Dict
     ) -> Dict[str, Any]:
         """
@@ -580,9 +693,16 @@ class AudioProcessingPipeline:
                     "language": transcription_result.get("language"),
                     "status": "completed"
                 },
+                "nlp_analysis": {
+                    "intent": nlp_result.get("intent", "unknown"),
+                    "sentiment": nlp_result.get("sentiment", "neutral"),
+                    "risk_level": nlp_result.get("risk_level", "low"),
+                    "status": "completed"
+                },
                 "database_storage": {
-                    "transcript_stored": storage_result.get("transcript_stored", {}).get("success", False),
-                    "analysis_stored": storage_result.get("analysis_stored", {}).get("success", False),
+                    "transcript_stored": storage_result.get("transcript_stored", {}).get("store_success", False),
+                    "analysis_stored": storage_result.get("analysis_stored", {}).get("store_success", False),
+                    "nlp_analysis_stored": storage_result.get("nlp_analysis_stored", {}).get("store_success", False),
                     "status": "completed"
                 }
             },

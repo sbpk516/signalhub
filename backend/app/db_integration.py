@@ -234,6 +234,126 @@ class DatabaseIntegration:
                 db_session.close()
     
     @log_function_call
+    def store_nlp_analysis(
+        self, 
+        call_id: str, 
+        nlp_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Store NLP analysis results in the database.
+        
+        Args:
+            call_id: Unique call identifier
+            nlp_data: NLP analysis results
+            
+        Returns:
+            Dictionary with store operation results
+        """
+        logger.info(f"Storing NLP analysis for call: {call_id}")
+        
+        with PerformanceMonitor("nlp_analysis_storage") as monitor:
+            try:
+                db_session = next(get_db())
+                
+                # Check if call exists
+                call_record = db_session.query(Call).filter(Call.call_id == call_id).first()
+                if not call_record:
+                    error_msg = f"Call record not found: {call_id}"
+                    logger.error(error_msg)
+                    return {
+                        "call_id": call_id,
+                        "store_success": False,
+                        "error": error_msg,
+                        "store_timestamp": datetime.now().isoformat()
+                    }
+                
+                # Extract data from NLP analysis
+                intent_data = nlp_data.get("intent", {})
+                sentiment_data = nlp_data.get("sentiment", {})
+                risk_data = nlp_data.get("risk", {})
+                keywords = nlp_data.get("keywords", [])
+                
+                # Create analysis record
+                analysis_record = Analysis(
+                    call_id=call_id,
+                    intent=intent_data.get("intent", "unknown"),
+                    intent_confidence=int(intent_data.get("confidence", 0.0) * 100),
+                    sentiment=sentiment_data.get("sentiment", "neutral"),
+                    sentiment_score=sentiment_data.get("sentiment_score", 0),
+                    escalation_risk=risk_data.get("escalation_risk", "low"),
+                    risk_score=risk_data.get("risk_score", 0),
+                    keywords=json.dumps(keywords),
+                    topics=json.dumps([]),  # Will be implemented in Week 4
+                    urgency_level=risk_data.get("urgency_level", "low"),
+                    compliance_risk=risk_data.get("compliance_risk", "none")
+                )
+                
+                # Add and commit
+                db_session.add(analysis_record)
+                db_session.commit()
+                
+                logger.info(f"NLP analysis stored successfully for call: {call_id}")
+                logger.info(f"Intent: {analysis_record.intent} (confidence: {analysis_record.intent_confidence}%)")
+                logger.info(f"Sentiment: {analysis_record.sentiment} (score: {analysis_record.sentiment_score})")
+                logger.info(f"Risk: {analysis_record.escalation_risk} (score: {analysis_record.risk_score})")
+                
+                # Log debug information
+                debug_helper.log_debug_info(
+                    "nlp_analysis_stored",
+                    {
+                        "call_id": call_id,
+                        "analysis_id": analysis_record.id,
+                        "intent": analysis_record.intent,
+                        "intent_confidence": analysis_record.intent_confidence,
+                        "sentiment": analysis_record.sentiment,
+                        "sentiment_score": analysis_record.sentiment_score,
+                        "escalation_risk": analysis_record.escalation_risk,
+                        "risk_score": analysis_record.risk_score,
+                        "keywords_count": len(keywords)
+                    }
+                )
+                
+                return {
+                    "call_id": call_id,
+                    "store_success": True,
+                    "analysis_id": analysis_record.id,
+                    "intent": analysis_record.intent,
+                    "sentiment": analysis_record.sentiment,
+                    "risk_level": analysis_record.escalation_risk,
+                    "store_timestamp": datetime.now().isoformat()
+                }
+                
+            except SQLAlchemyError as e:
+                logger.error(f"Database error storing NLP analysis: {e}")
+                db_session.rollback()
+                debug_helper.capture_exception(
+                    "nlp_analysis_storage_db_error",
+                    e,
+                    {"call_id": call_id, "nlp_data_keys": list(nlp_data.keys())}
+                )
+                return {
+                    "call_id": call_id,
+                    "store_success": False,
+                    "error": f"Database error: {str(e)}",
+                    "store_timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                logger.error(f"Error storing NLP analysis: {e}")
+                debug_helper.capture_exception(
+                    "nlp_analysis_storage_error",
+                    e,
+                    {"call_id": call_id, "nlp_data_keys": list(nlp_data.keys())}
+                )
+                return {
+                    "call_id": call_id,
+                    "store_success": False,
+                    "error": str(e),
+                    "store_timestamp": datetime.now().isoformat()
+                }
+            finally:
+                db_session.close()
+    
+    @log_function_call
     def store_audio_analysis(
         self, 
         call_id: str, 
