@@ -1,9 +1,12 @@
 import React, { useState } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
+import Dashboard from '../../pages/Dashboard'
+import Upload from '../../pages/Upload'
+import Results from '../../pages/Results'
 
 interface LayoutProps {
-  children: React.ReactNode
+  children?: React.ReactNode
   className?: string
 }
 
@@ -29,6 +32,20 @@ const Layout: React.FC<LayoutProps> = ({ children, className = '' }) => {
     setActiveSidebarItem('dashboard')
   }
 
+  // Render the appropriate page content
+  const renderPageContent = () => {
+    switch (activePage) {
+      case 'dashboard':
+        return <Dashboard />
+      case 'upload':
+        return <Upload />
+      case 'results':
+        return <Results />
+      default:
+        return <Dashboard />
+    }
+  }
+
   return (
     <div className={`min-h-screen bg-gray-50 ${className}`}>
       {/* Header */}
@@ -50,7 +67,7 @@ const Layout: React.FC<LayoutProps> = ({ children, className = '' }) => {
         {/* Main Content */}
         <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
           <div className="p-6">
-            {children}
+            {children || renderPageContent()}
           </div>
         </main>
       </div>
