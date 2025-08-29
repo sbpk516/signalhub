@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:safe": "bash ../scripts/frontend-health-check.sh && vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "bash ../scripts/frontend-health-check.sh",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf node_modules/.vite dist",
+    "restart": "pkill -f vite && npm run dev"
   },
   "dependencies": {
     "axios": "^1.11.0",
