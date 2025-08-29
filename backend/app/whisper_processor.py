@@ -297,7 +297,7 @@ class WhisperProcessor:
             debug_helper.capture_exception(
                 "transcript_save",
                 e,
-                {"call_id": call_id, "transcription_data_keys": list(transcription_data.keys())}
+                {"call_id": call_id, "transcription_data_keys": list(transcription_data.keys()) if isinstance(transcription_data, dict) else "Not a dictionary"}
             )
             
             return {
