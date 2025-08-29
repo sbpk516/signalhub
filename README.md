@@ -2,13 +2,14 @@
 
 A real-time call intelligence platform that ingests live or batch call audio and transcripts, applies AI/NLP to detect intent, sentiment, escalation risk, churn signals, and policy violations, and delivers instant insights and summaries.
 
-## 🚀 **Current Status: Phase 1.3 Complete**
+## 🚀 **Current Status: Phase 4 Complete**
 
-**Phase 1.3: Audio Processing Pipeline** ✅ **COMPLETED**
-- Complete end-to-end audio processing pipeline
-- Real-time monitoring and debugging system
-- Performance optimization and benchmarking
-- Production-ready deployment guide
+**Phase 4: Frontend UI** ✅ **COMPLETED**
+- Complete React/TypeScript frontend with professional UI
+- Dashboard, Upload, and Results pages
+- Responsive design with Tailwind CSS
+- Navigation and state management
+- Professional styling and user experience
 
 ## 📋 **Project Overview**
 
@@ -43,27 +44,48 @@ A real-time call intelligence platform that ingests live or batch call audio and
 - Audio to text conversion
 - Transcript storage
 
-### **Phase 3: NLP Analysis** 📋 **PLANNED**
-- Intent detection
+### **Phase 3: NLP Analysis** ✅ **COMPLETED**
+- Intent detection with NLTK and VADER
 - Sentiment analysis
 - Risk assessment
+- Text preprocessing and analysis
+- Integration with existing pipeline
 
-### **Phase 4: Real-time Processing** 📋 **PLANNED**
+### **Phase 4: Frontend UI** ✅ **COMPLETED**
+- **Week 1**: Basic UI Structure
+  - Header, Sidebar, Layout components
+  - Dashboard page with stats and activity
+  - Upload page with drag & drop functionality
+  - Results page with search and filtering
+- Professional React/TypeScript interface
+- Tailwind CSS styling and responsive design
+- Navigation and state management
+- Complete user experience
+
+### **Phase 5: Real-time Processing** 📋 **PLANNED**
 - Kafka integration
 - Stream processing
 - Real-time alerts
 
 ## 🛠️ **Tech Stack**
 
-### **Core Technologies**
+### **Backend Technologies**
 - **Backend**: FastAPI (Python)
 - **Database**: PostgreSQL
 - **ORM**: SQLAlchemy
 - **Configuration**: Pydantic Settings
 - **Testing**: Pytest
+- **Audio Processing**: OpenAI Whisper, FFmpeg
+- **AI/ML**: NLTK, VADER Sentiment Analysis
+
+### **Frontend Technologies**
+- **Frontend**: React 18 with TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS
+- **State Management**: React Hooks
+- **Testing**: Jest + React Testing Library
 
 ### **Future Technologies**
-- **Audio Processing**: OpenAI Whisper, FFmpeg
 - **AI/ML**: PyTorch, Hugging Face Transformers
 - **Streaming**: Apache Kafka
 - **Search**: Elasticsearch
@@ -74,10 +96,11 @@ A real-time call intelligence platform that ingests live or batch call audio and
 
 ### **Prerequisites**
 - Python 3.9+
+- Node.js 20.19+ or 22.12+
 - PostgreSQL
 - Git
 
-### **Installation**
+### **Backend Installation**
 
 1. **Clone the repository**
    ```bash
@@ -111,27 +134,45 @@ A real-time call intelligence platform that ingests live or batch call audio and
    psql -d signalhub -c "ALTER USER signalhub WITH PASSWORD 'signalhub123';"
    ```
 
-6. **Run the application**
+6. **Run the backend**
    ```bash
-   python -m uvicorn backend.app.main:app --reload --port 8001
+   python -m uvicorn backend.app.main:app --reload --port 8000
    ```
+
+### **Frontend Installation**
+
+1. **Navigate to frontend directory**
+   ```bash
+   cd frontend
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Start development server**
+   ```bash
+   npm run dev
+   ```
+
+4. **Access the application**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
 
 ### **Verify Installation**
 
-1. **Check API health**
+1. **Check backend API health**
    ```bash
-   curl http://localhost:8001/health
+   curl http://localhost:8000/health
    ```
 
 2. **View API documentation**
-   - Open: http://localhost:8001/docs
+   - Open: http://localhost:8000/docs
 
-3. **Test endpoints**
-   ```bash
-   curl http://localhost:8001/
-   curl http://localhost:8001/api/v1/status
-   curl http://localhost:8001/api/v1/calls
-   ```
+3. **Test frontend**
+   - Open: http://localhost:3000
+   - Navigate between Dashboard, Upload, and Results pages
 
 ## 📁 **Project Structure**
 
@@ -143,15 +184,32 @@ signalhub/
 │   │   ├── main.py          # FastAPI application
 │   │   ├── config.py        # Configuration settings
 │   │   ├── database.py      # Database connection
-│   │   └── models.py        # Database models
+│   │   ├── models.py        # Database models
+│   │   ├── audio_processor.py    # Audio processing
+│   │   ├── whisper_processor.py  # Speech-to-text
+│   │   ├── nlp_processor.py      # NLP analysis
+│   │   └── pipeline_orchestrator.py # Pipeline management
 │   ├── test_main.py         # Basic tests
 │   └── requirements.txt     # Python dependencies
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # React components
+│   │   │   ├── Header/      # Header components
+│   │   │   ├── Sidebar/     # Sidebar components
+│   │   │   ├── Layout/      # Layout components
+│   │   │   └── Shared/      # Shared components
+│   │   ├── pages/           # Page components
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── Upload.tsx
+│   │   │   └── Results.tsx
+│   │   ├── App.tsx          # Main app component
+│   │   └── main.tsx         # Entry point
+│   ├── package.json         # Node.js dependencies
+│   └── tailwind.config.js   # Tailwind configuration
 ├── audio_uploads/           # Audio file storage
 ├── logs/                    # Application logs
 ├── env.example              # Environment variables template
 ├── .gitignore              # Git ignore rules
-├── setup.py                # Setup script
-├── test_setup.py           # Test script
 └── README.md               # This file
 ```
 
@@ -167,6 +225,12 @@ signalhub/
 - `GET /api/v1/pipeline/{call_id}/status` - Get pipeline status
 - `GET /api/v1/pipeline/{call_id}/debug` - Get debug information
 
+### **NLP Analysis**
+- `POST /api/v1/nlp/analyze/{call_id}` - Analyze specific call
+- `GET /api/v1/nlp/intent/{call_id}` - Get intent for call
+- `GET /api/v1/nlp/sentiment/{call_id}` - Get sentiment for call
+- `GET /api/v1/nlp/risk/{call_id}` - Get risk assessment
+
 ### **Monitoring & Performance**
 - `GET /api/v1/monitor/active` - Get active pipelines
 - `GET /api/v1/monitor/history` - Get pipeline history
@@ -179,13 +243,19 @@ signalhub/
 
 ## 🧪 **Testing**
 
-### **Run Tests**
+### **Backend Tests**
 ```bash
 # Run all tests
 pytest backend/test_main.py
 
 # Run with verbose output
 pytest backend/test_main.py -v
+```
+
+### **Frontend Tests**
+```bash
+cd frontend
+npm test
 ```
 
 ### **Test Coverage**
@@ -195,12 +265,6 @@ pip install pytest-cov
 
 # Run with coverage
 pytest backend/test_main.py --cov=backend
-```
-
-### **Comprehensive Setup Test**
-```bash
-# Run the setup verification script
-python test_setup.py
 ```
 
 ## 🔍 **Debugging**
@@ -218,14 +282,23 @@ python test_setup.py
 
 2. **Port Already in Use**
    ```bash
-   # Check what's using port 8001
-   lsof -i :8001
+   # Check what's using port 8000
+   lsof -i :8000
    
    # Kill process
    kill -9 <PID>
    ```
 
-3. **Import Errors**
+3. **Frontend Issues**
+   ```bash
+   # Clear Vite cache
+   cd frontend && rm -rf node_modules/.vite
+   
+   # Restart development server
+   npm run dev
+   ```
+
+4. **Import Errors**
    ```bash
    # Make sure you're in the right directory
    pwd
@@ -241,25 +314,22 @@ python test_setup.py
 - **calls** - Call metadata
 - **transcripts** - Call transcripts
 - **analyses** - AI analysis results
+- **nlp_analysis** - NLP analysis results
 
 ## 🎯 **Next Steps**
 
-### **Phase 3: NLP Analysis** 🔄 **NEXT**
-1. Install PyTorch and Transformers
-2. Implement intent detection
-3. Add sentiment analysis
-4. Create risk assessment
-
-### **Phase 4: Real-time Processing**
+### **Phase 5: Real-time Processing** 🔄 **NEXT**
 1. Kafka integration
 2. Stream processing
 3. Real-time alerts
+4. Live audio streaming
 
-### **Phase 3: NLP Analysis**
-1. Install PyTorch and Transformers
-2. Implement intent detection
-3. Add sentiment analysis
-4. Create risk assessment
+### **Future Enhancements**
+1. **Advanced Analytics** - Business intelligence dashboard
+2. **Multi-language Support** - International call processing
+3. **Speaker Diarization** - Identify different speakers
+4. **Custom Models** - Fine-tuned AI models
+5. **Mobile App** - iOS/Android applications
 
 ## 🤝 **Contributing**
 
@@ -275,5 +345,4 @@ This project is licensed under the MIT License.
 
 ---
 
-**Phase 1.3 Complete!** 🎉 The audio processing pipeline is production-ready with comprehensive monitoring, testing, and deployment automation.
-# Repository renamed and tested - Wed Aug 27 22:58:52 EDT 2025
+**Phase 4 Complete!** 🎉 The SignalHub platform now has a complete frontend UI with professional styling, responsive design, and full user experience. Ready for real-time processing implementation!
