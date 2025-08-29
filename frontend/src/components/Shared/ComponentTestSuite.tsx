@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Button, Card } from './index'
+import { Logo } from '../Header'
 
 const ComponentTestSuite: React.FC = () => {
   const [clickCounts, setClickCounts] = useState<Record<string, number>>({})
@@ -11,9 +12,48 @@ const ComponentTestSuite: React.FC = () => {
     }))
   }
 
+  const handleLogoClick = () => {
+    handleClick('logo')
+  }
+
   return (
     <div className="p-8 space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">Component Test Suite</h1>
+      
+      {/* Logo Tests */}
+      <Card title="Logo Component Tests">
+        <div className="space-y-6">
+          {/* Logo Sizes */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Logo Sizes</h3>
+            <div className="flex flex-wrap gap-6 items-center">
+              <div className="text-center">
+                <Logo size="sm" onClick={handleLogoClick} />
+                <p className="text-xs text-gray-500 mt-1">Small</p>
+              </div>
+              <div className="text-center">
+                <Logo size="md" onClick={handleLogoClick} />
+                <p className="text-xs text-gray-500 mt-1">Medium (Default)</p>
+              </div>
+              <div className="text-center">
+                <Logo size="lg" onClick={handleLogoClick} />
+                <p className="text-xs text-gray-500 mt-1">Large</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Logo Click Counter */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Logo Interactions</h3>
+            <div className="flex items-center gap-4">
+              <Logo onClick={handleLogoClick} />
+              <span className="text-sm text-gray-600">
+                Logo clicks: {clickCounts.logo || 0}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Card>
       
       {/* Button Tests */}
       <Card title="Button Component Tests">
