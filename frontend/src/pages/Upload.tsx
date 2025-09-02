@@ -133,10 +133,13 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
 
       console.log(`[UPLOAD] File ${file.name} uploaded successfully!`)
 
-      // Notify parent component that upload is complete
-      if (onUploadComplete) {
-        onUploadComplete()
-      }
+      // Don't immediately switch pages - let user see the completed status
+      // if (onUploadComplete) {
+      //   onUploadComplete()
+      // }
+
+      // Show success message instead
+      alert(`✅ File "${file.name}" uploaded successfully!`)
 
     } catch (error) {
       console.error(`[UPLOAD] Error uploading ${file.name}:`, error)
@@ -329,6 +332,16 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
               <li>• Check the Results page to view processing status</li>
               <li>• Processing time depends on file length and complexity</li>
             </ul>
+          </div>
+
+          {/* Return to Dashboard Button */}
+          <div className="text-center pt-4">
+            <button
+              onClick={() => onUploadComplete && onUploadComplete()}
+              className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              🏠 Return to Dashboard
+            </button>
           </div>
         </div>
       </Card>

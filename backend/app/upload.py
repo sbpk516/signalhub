@@ -114,7 +114,7 @@ class AudioUploadHandler:
             raise HTTPException(status_code=500, detail="Failed to save file")
     
     @log_function_call
-    async def create_call_record(self, db: Session, file_path: str, original_filename: str) -> Call:
+    async def create_call_record(self, db: Session, file_path: str, original_filename: str, call_id: str) -> Call:
         """
         Create a call record in the database.
         
@@ -122,12 +122,12 @@ class AudioUploadHandler:
             db: Database session
             file_path: Path to saved audio file
             original_filename: Original uploaded filename
+            call_id: Pre-generated call ID to use
             
         Returns:
             Created Call object
         """
-        # Generate unique call ID
-        call_id = str(uuid.uuid4())
+        # Use the provided call ID instead of generating a new one
         
         # Create call record
         call = Call(
@@ -195,7 +195,7 @@ async def upload_audio_file(
             
             # Step 4: Create database record
             db_session = next(get_db())
-            call = await upload_handler.create_call_record(db_session, file_path, file.filename)
+            call = await upload_handler.create_call_record(db_session, file_path, file.filename, call_id)
             
             # Step 5: Return success response
             result = {

@@ -1,6 +1,6 @@
 // API Service Layer - Centralized export
 export * from './client'
-export * from './upload'
-export * from './results'
-export * from './test-client'
-export * from './test-results'
+export * from './upload'  // Re-enabled to test simplified API types
+// export * from './results'  // Temporarily commented out to debug Dashboard issue
+// export * from './test-client'  // Temporarily commented out to debug Dashboard issue
+// export * from './test-results'  // Temporarily commented out to debug Dashboard issue

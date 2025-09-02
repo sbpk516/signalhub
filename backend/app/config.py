@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     
     # File Upload Configuration
     max_file_size: Union[int, str] = 100 * 1024 * 1024  # 100MB in bytes
-    upload_dir: str = "audio_uploads"
+    upload_dir: str = "../audio_uploads"  # Go up one level from backend/ to project root
     
     @property
     def max_file_size_bytes(self) -> int:

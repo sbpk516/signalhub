@@ -8,7 +8,8 @@
  * - Type safety with our TypeScript types
  */
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios from 'axios';
+import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { API_BASE_URL, API_TIMEOUT } from '@/types/constants';
 
 // Custom logger for API debugging

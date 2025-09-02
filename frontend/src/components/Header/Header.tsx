@@ -1,6 +1,5 @@
 import React from 'react'
-import { Logo } from './Logo'
-import { Navigation } from './Navigation'
+import { Logo, Navigation } from './index'
 
 interface HeaderProps {
   activePage: 'dashboard' | 'upload' | 'results'

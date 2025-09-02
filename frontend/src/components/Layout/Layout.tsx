@@ -1,59 +1,47 @@
 import React, { useState, useCallback } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
-import { Dashboard, Upload, Results } from '../../pages'
+import { Dashboard, Upload } from '../../pages'
 
 const Layout: React.FC = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  console.log('[LAYOUT] Component rendering...')
+  
   const [activePage, setActivePage] = useState<'dashboard' | 'upload' | 'results'>('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Handle upload completion - switch to results page
   const handleUploadComplete = useCallback(() => {
-    console.log('[LAYOUT] Upload completed, switching to results page')
-    setActivePage('results')
+    console.log('[LAYOUT] Upload completed, switching to dashboard')
+    setActivePage('dashboard')
   }, [])
 
-  // Handle page navigation
-  const handlePageChange = useCallback((page: 'dashboard' | 'upload' | 'results') => {
-    console.log('[LAYOUT] Switching to page:', page)
-    setActivePage(page)
-  }, [])
-
-  // Render the active page content
-  const renderPageContent = () => {
+  const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard />
       case 'upload':
         return <Upload onUploadComplete={handleUploadComplete} />
       case 'results':
-        return <Results />
+        return <div className="text-center py-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Results Page</h2>
+          <p className="text-gray-600">Results functionality coming soon...</p>
+        </div>
       default:
         return <Dashboard />
     }
   }
-
+  
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <Header 
-        activePage={activePage} 
-        onPageChange={handlePageChange}
-        onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
-      />
-      
+      <Header onPageChange={setActivePage} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
       <div className="flex">
-        {/* Sidebar */}
         <Sidebar 
           isOpen={sidebarOpen} 
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           activePage={activePage}
-          onPageChange={handlePageChange}
+          onPageChange={setActivePage}
         />
-        
-        {/* Main Content */}
-        <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
-          {renderPageContent()}
+        <main className="flex-1 p-6">
+          {renderPage()}
         </main>
       </div>
     </div>
