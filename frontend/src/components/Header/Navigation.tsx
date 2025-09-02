@@ -1,58 +1,37 @@
 import React from 'react'
 
 interface NavigationProps {
-  activePage?: 'dashboard' | 'upload' | 'results'
-  onPageChange?: (page: 'dashboard' | 'upload' | 'results') => void
-  className?: string
+  activePage: 'dashboard' | 'upload' | 'results'
+  onPageChange: (page: 'dashboard' | 'upload' | 'results') => void
 }
 
-const Navigation: React.FC<NavigationProps> = ({
-  activePage = 'dashboard',
-  onPageChange,
-  className = ''
-}) => {
-  const baseClasses = 'flex items-center space-x-6'
-  const navClasses = `${baseClasses} ${className}`
-
-  const menuItems = [
+const Navigation: React.FC<NavigationProps> = ({ activePage, onPageChange }) => {
+  const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'upload', label: 'Upload', icon: '📤' },
+    { id: 'upload', label: 'Upload', icon: '📁' },
     { id: 'results', label: 'Results', icon: '📋' }
-  ] as const
-
-  const handleClick = (page: 'dashboard' | 'upload' | 'results') => {
-    onPageChange?.(page)
-  }
+  ]
 
   return (
-    <nav className={navClasses}>
-      {menuItems.map((item) => {
+    <nav className="flex space-x-8">
+      {navItems.map((item) => {
         const isActive = activePage === item.id
-        const itemClasses = `
-          flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200
-          ${isActive 
-            ? 'bg-blue-100 text-blue-700' 
-            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-          }
-        `
-
+        
         return (
-          <div
+          <button
             key={item.id}
-            className={itemClasses}
-            onClick={() => handleClick(item.id)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                handleClick(item.id)
+            onClick={() => onPageChange(item.id as 'dashboard' | 'upload' | 'results')}
+            className={`
+              flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200
+              ${isActive
+                ? 'text-blue-600 bg-blue-50 border border-blue-200'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }
-            }}
+            `}
           >
             <span className="text-base">{item.icon}</span>
             <span>{item.label}</span>
-          </div>
+          </button>
         )
       })}
     </nav>

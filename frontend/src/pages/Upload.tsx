@@ -12,7 +12,11 @@ interface UploadFile {
   error?: string
 }
 
-const Upload: React.FC = () => {
+interface UploadProps {
+  onUploadComplete?: () => void
+}
+
+const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
   const [files, setFiles] = useState<UploadFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -107,7 +111,7 @@ const Upload: React.FC = () => {
           ? { ...f, progress: 100 }
           : f
       ))
-
+  
       console.log(`[UPLOAD] Response status: ${response.status}`)
       console.log(`[UPLOAD] Response headers:`, Object.fromEntries(response.headers.entries()))
 
@@ -128,6 +132,11 @@ const Upload: React.FC = () => {
       ))
 
       console.log(`[UPLOAD] File ${file.name} uploaded successfully!`)
+
+      // Notify parent component that upload is complete
+      if (onUploadComplete) {
+        onUploadComplete()
+      }
 
     } catch (error) {
       console.error(`[UPLOAD] Error uploading ${file.name}:`, error)
@@ -156,212 +165,184 @@ const Upload: React.FC = () => {
     }
   }
 
-  // Remove file from list
+  // Clear completed files
+  const clearCompleted = () => {
+    setFiles(prev => prev.filter(f => f.status !== 'completed'))
+  }
+
+  // Remove file
   const removeFile = (fileId: string) => {
     setFiles(prev => prev.filter(f => f.id !== fileId))
   }
 
-  // Format file size
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* Page Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Upload Audio</h1>
-            <p className="text-lg text-gray-600">Upload audio files for analysis and transcription</p>
-          </div>
-          <div className="mt-4 lg:mt-0 lg:ml-6">
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <div className="flex items-center">
-                <span className="mr-2">📁</span>
-                <span>Supported: WAV, MP3, M4A, FLAC</span>
-              </div>
-              <div className="flex items-center">
-                <span className="mr-2">📏</span>
-                <span>Max: 100MB per file</span>
-              </div>
-            </div>
-          </div>
-        </div>
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="text-center">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Upload Audio Files</h1>
+        <p className="text-gray-600 max-w-2xl mx-auto">
+          Upload your audio files for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
+        </p>
       </div>
 
       {/* Upload Zone */}
-      <Card title="Upload Audio Files" className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-        <div
-          className={`
-            border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300
-            ${isDragOver 
-              ? 'border-blue-500 bg-blue-100 scale-105' 
-              : 'border-blue-300 hover:border-blue-400 hover:bg-blue-50'
-            }
-          `}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="space-y-6">
-            <div className="text-8xl animate-bounce">📁</div>
-            <div className="space-y-2">
-              <h3 className="text-2xl font-bold text-gray-900">
-                Drop audio files here or click to browse
-              </h3>
-              <p className="text-lg text-gray-600">
-                Support for WAV, MP3, M4A, and FLAC files up to 100MB
-              </p>
-            </div>
+      <Card>
+        <div className="space-y-6">
+          {/* Drag & Drop Zone */}
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              isDragOver
+                ? 'border-blue-400 bg-blue-50'
+                : 'border-gray-300 hover:border-gray-400'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="text-6xl mb-4">🎵</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Drop audio files here, or click to browse
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Drag and drop your audio files, or click the button below to select files
+            </p>
+            
             <input
+              id="file-input"
               type="file"
               multiple
               accept="audio/*"
               onChange={(e) => handleFileSelect(e.target.files)}
               className="hidden"
-              id="file-input"
             />
-            <label
-              htmlFor="file-input"
-              className="inline-flex items-center px-8 py-3 border border-transparent text-lg font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 cursor-pointer transition-all duration-200 transform hover:scale-105"
+            
+            <button
+              onClick={() => document.getElementById('file-input')?.click()}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              <span className="mr-2">📤</span>
-              Choose Files
-            </label>
+              📁 Choose Files
+            </button>
           </div>
-        </div>
-      </Card>
 
-      {/* File List */}
-      {files.length > 0 && (
-        <Card title={`Selected Files (${files.length})`} className="bg-white">
-          <div className="space-y-4">
-            {files.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-6 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className="text-3xl">
-                    {file.status === 'completed' ? '✅' : 
-                     file.status === 'error' ? '❌' : 
-                     file.status === 'uploading' ? '⏳' : '📄'}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-900 text-lg">{file.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {formatFileSize(file.size)} • {file.type} • {file.status}
-                    </div>
-                    {file.error && (
-                      <div className="text-sm text-red-500 mt-1">{file.error}</div>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-4">
-                  {file.status === 'uploading' && (
-                    <div className="w-48 bg-gray-200 rounded-full h-3">
-                      <div 
-                        className="bg-blue-600 h-3 rounded-full transition-all duration-300"
-                        style={{ width: `${file.progress}%` }}
-                      ></div>
-                    </div>
-                  )}
-                  {file.status === 'completed' && (
-                    <span className="text-green-600 text-sm font-semibold bg-green-100 px-3 py-1 rounded-full">
-                      Completed
-                    </span>
-                  )}
-                  {file.status === 'error' && (
-                    <span className="text-red-600 text-sm font-semibold bg-red-100 px-3 py-1 rounded-full">
-                      Failed
-                    </span>
-                  )}
+          {/* File List */}
+          {files.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Selected Files ({files.length})
+                </h3>
+                <div className="flex space-x-3">
                   <button
-                    onClick={() => removeFile(file.id)}
-                    className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                    onClick={startUpload}
+                    disabled={uploading || !files.some(f => f.status === 'pending')}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                   >
-                    ✕
+                    🚀 Start Upload
+                  </button>
+                  <button
+                    onClick={clearCompleted}
+                    disabled={!files.some(f => f.status === 'completed')}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+                  >
+                    🗑️ Clear Completed
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
 
-          {/* Upload Button */}
-          <div className="mt-8 flex justify-end">
-            <button
-              onClick={startUpload}
-              disabled={uploading || files.filter(f => f.status === 'pending').length === 0}
-              className={`
-                px-8 py-3 rounded-lg font-semibold text-lg transition-all duration-200
-                ${uploading || files.filter(f => f.status === 'pending').length === 0
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-green-600 text-white hover:bg-green-700 hover:scale-105 focus:ring-4 focus:ring-green-300'
-                }
-              `}
-            >
-              {uploading ? '⏳ Uploading...' : '🚀 Start Upload'}
-            </button>
-          </div>
-        </Card>
-      )}
+              <div className="space-y-3">
+                {files.map((file) => (
+                  <div
+                    key={file.id}
+                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                  >
+                    <div className="flex items-center space-x-4 flex-1">
+                      <div className="text-2xl">
+                        {file.status === 'completed' ? '✅' : 
+                         file.status === 'uploading' ? '🔄' : 
+                         file.status === 'error' ? '❌' : '📁'}
+                      </div>
+                      
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium text-gray-900">{file.name}</span>
+                          {file.status === 'error' && (
+                            <span className="text-red-600 text-sm">{file.error}</span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {formatFileSize(file.size)} • {file.type}
+                        </div>
+                      </div>
+                    </div>
 
-      {/* Upload Instructions */}
-      <Card title="📋 Upload Instructions" className="bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <h4 className="font-semibold text-gray-900 text-lg">Step-by-Step Process</h4>
-            <div className="space-y-3 text-sm text-gray-600">
-              <div className="flex items-start space-x-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                <span>Select or drag audio files into the upload area above</span>
-              </div>
-              <div className="flex items-start space-x-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">2</span>
-                <span>Supported formats: WAV, MP3, M4A, FLAC (max 100MB per file)</span>
-              </div>
-              <div className="flex items-start space-x-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                <span>Click "Start Upload" to begin processing</span>
-              </div>
-              <div className="flex items-start space-x-3">
-                <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">4</span>
-                <span>Monitor progress and check results in the Results page</span>
+                    <div className="flex items-center space-x-4">
+                      {/* Progress Bar */}
+                      {file.status === 'uploading' && (
+                        <div className="w-32">
+                          <div className="bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${file.progress}%` }}
+                            ></div>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1 text-center">
+                            {file.progress}%
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Status Badge */}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        file.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        file.status === 'uploading' ? 'bg-blue-100 text-blue-800' :
+                        file.status === 'error' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {file.status === 'completed' ? '✅ Completed' : 
+                         file.status === 'uploading' ? '🔄 Uploading' : 
+                         file.status === 'error' ? '❌ Error' : '⏳ Pending'}
+                      </span>
+
+                      {/* Remove Button */}
+                      {file.status !== 'uploading' && (
+                        <button
+                          onClick={() => removeFile(file.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
-          
-          <div className="space-y-4">
-            <h4 className="font-semibold text-gray-900 text-lg">File Requirements</h4>
-            <div className="space-y-3 text-sm text-gray-600">
-              <div className="flex items-center space-x-2">
-                <span className="text-green-500">✅</span>
-                <span>Audio quality: 16kHz or higher</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-green-500">✅</span>
-                <span>Duration: 1 second to 2 hours</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-green-500">✅</span>
-                <span>File size: Up to 100MB</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-green-500">✅</span>
-                <span>Languages: English, Spanish, French</span>
-              </div>
-            </div>
+          )}
+
+          {/* Instructions */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-medium text-blue-900 mb-2">📋 Upload Instructions</h4>
+            <ul className="text-sm text-blue-800 space-y-1">
+              <li>• Supported formats: WAV, MP3, M4A, FLAC</li>
+              <li>• Maximum file size: 100MB</li>
+              <li>• Files are automatically processed after upload</li>
+              <li>• Check the Results page to view processing status</li>
+              <li>• Processing time depends on file length and complexity</li>
+            </ul>
           </div>
         </div>
       </Card>
     </div>
   )
+}
+
+// Helper function to format file size
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 export default Upload

@@ -1,44 +1,31 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
-import Dashboard from '../../pages/Dashboard'
-import Upload from '../../pages/Upload'
-import Results from '../../pages/Results'
+import { Dashboard, Upload, Results } from '../../pages'
 
-interface LayoutProps {
-  children?: React.ReactNode
-  className?: string
-}
-
-const Layout: React.FC<LayoutProps> = ({ children, className = '' }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+const Layout: React.FC = () => {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [activePage, setActivePage] = useState<'dashboard' | 'upload' | 'results'>('dashboard')
-  const [activeSidebarItem, setActiveSidebarItem] = useState('dashboard')
 
-  const handlePageChange = (page: 'dashboard' | 'upload' | 'results') => {
+  // Handle upload completion - switch to results page
+  const handleUploadComplete = useCallback(() => {
+    console.log('[LAYOUT] Upload completed, switching to results page')
+    setActivePage('results')
+  }, [])
+
+  // Handle page navigation
+  const handlePageChange = useCallback((page: 'dashboard' | 'upload' | 'results') => {
+    console.log('[LAYOUT] Switching to page:', page)
     setActivePage(page)
-  }
+  }, [])
 
-  const handleSidebarToggle = () => {
-    setSidebarOpen(!sidebarOpen)
-  }
-
-  const handleSidebarItemClick = (item: string) => {
-    setActiveSidebarItem(item)
-  }
-
-  const handleLogoClick = () => {
-    setActivePage('dashboard')
-    setActiveSidebarItem('dashboard')
-  }
-
-  // Render the appropriate page content
+  // Render the active page content
   const renderPageContent = () => {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard />
       case 'upload':
-        return <Upload />
+        return <Upload onUploadComplete={handleUploadComplete} />
       case 'results':
         return <Results />
       default:
@@ -47,28 +34,26 @@ const Layout: React.FC<LayoutProps> = ({ children, className = '' }) => {
   }
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${className}`}>
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <Header 
-        activePage={activePage}
+        activePage={activePage} 
         onPageChange={handlePageChange}
-        onLogoClick={handleLogoClick}
+        onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
       />
-
+      
       <div className="flex">
         {/* Sidebar */}
         <Sidebar 
-          isOpen={sidebarOpen}
-          onToggle={handleSidebarToggle}
-          activeItem={activeSidebarItem}
-          onItemClick={handleSidebarItemClick}
+          isOpen={sidebarOpen} 
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          activePage={activePage}
+          onPageChange={handlePageChange}
         />
-
+        
         {/* Main Content */}
         <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
-          <div className="p-6">
-            {children || renderPageContent()}
-          </div>
+          {renderPageContent()}
         </main>
       </div>
     </div>

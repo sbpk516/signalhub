@@ -1,43 +1,32 @@
 import React from 'react'
 
 interface LogoProps {
-  onClick?: () => void
-  className?: string
   size?: 'sm' | 'md' | 'lg'
+  onClick?: () => void
 }
 
-const Logo: React.FC<LogoProps> = ({
-  onClick,
-  className = '',
-  size = 'md'
-}) => {
-  const baseClasses = 'font-bold text-blue-600 cursor-pointer transition-colors duration-200 hover:text-blue-700'
-  
+const Logo: React.FC<LogoProps> = ({ size = 'md', onClick }) => {
   const sizeClasses = {
-    sm: 'text-lg',
-    md: 'text-xl',
-    lg: 'text-2xl'
+    sm: 'text-lg font-bold',
+    md: 'text-xl font-bold',
+    lg: 'text-2xl font-bold'
   }
 
-  const logoClasses = `${baseClasses} ${sizeClasses[size]} ${className}`
-
-  return (
-    <div 
-      className={logoClasses}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onClick?.()
-        }
-      }}
-    >
-      <span className="text-blue-600">Signal</span>
-      <span className="text-gray-800">Hub</span>
+  const logoContent = (
+    <div className={`text-blue-600 ${sizeClasses[size]} cursor-pointer hover:text-blue-700 transition-colors`}>
+      SignalHub
     </div>
   )
+
+  if (onClick) {
+    return (
+      <button onClick={onClick} className="focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded">
+        {logoContent}
+      </button>
+    )
+  }
+
+  return logoContent
 }
 
 export default Logo

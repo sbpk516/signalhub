@@ -1,88 +1,107 @@
 import React from 'react'
 
 interface SidebarProps {
-  isOpen?: boolean
-  onToggle?: () => void
-  activeItem?: string
-  onItemClick?: (item: string) => void
-  className?: string
+  isOpen: boolean
+  onToggle: () => void
+  activePage: 'dashboard' | 'upload' | 'results'
+  onPageChange: (page: 'dashboard' | 'upload' | 'results') => void
 }
 
-const Sidebar: React.FC<SidebarProps> = ({
-  isOpen = true,
-  onToggle,
-  activeItem = 'dashboard',
-  onItemClick,
-  className = ''
-}) => {
-  const baseClasses = 'bg-gray-50 border-r border-gray-200 w-64 min-h-screen transition-all duration-300'
-  const sidebarClasses = `${baseClasses} ${className} ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
-
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, activePage, onPageChange }) => {
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'analytics', label: 'Analytics', icon: '📈' },
-    { id: 'settings', label: 'Settings', icon: '⚙️' },
-    { id: 'help', label: 'Help', icon: '❓' }
+    { id: 'dashboard', label: 'Dashboard', icon: '📊', description: 'Overview and analytics' },
+    { id: 'upload', label: 'Upload', icon: '📁', description: 'Upload audio files' },
+    { id: 'results', label: 'Results', icon: '📋', description: 'View analysis results' },
+    { id: 'analytics', label: 'Analytics', icon: '📈', description: 'Advanced insights' },
+    { id: 'settings', label: 'Settings', icon: '⚙️', description: 'Configuration' },
+    { id: 'help', label: 'Help', icon: '❓', description: 'Documentation & support' }
   ]
 
   const handleItemClick = (itemId: string) => {
-    onItemClick?.(itemId)
+    if (['dashboard', 'upload', 'results'].includes(itemId)) {
+      onPageChange(itemId as 'dashboard' | 'upload' | 'results')
+    }
+    // For other items, we could add future functionality
   }
 
   return (
-    <aside className={sidebarClasses}>
-      {/* Sidebar Header */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800">Menu</h2>
-          {onToggle && (
+    <>
+      {/* Mobile overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 z-40 lg:hidden bg-gray-600 bg-opacity-75"
+          onClick={onToggle}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">SignalHub</h2>
             <button
               onClick={onToggle}
-              className="p-1 rounded-md hover:bg-gray-200 transition-colors"
-              aria-label="Toggle sidebar"
+              className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
             >
-              <span className="text-gray-600">✕</span>
+              <span className="sr-only">Close sidebar</span>
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
-          )}
+          </div>
+          
+          {/* Navigation */}
+          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+            {menuItems.map((item) => {
+              const isActive = activePage === item.id
+              const isClickable = ['dashboard', 'upload', 'results'].includes(item.id)
+              
+              return (
+                <div
+                  key={item.id}
+                  className={`
+                    group flex items-center px-3 py-3 text-sm font-medium rounded-lg cursor-pointer transition-all duration-200
+                    ${isActive 
+                      ? 'bg-blue-100 text-blue-900 border-r-2 border-blue-500' 
+                      : isClickable
+                        ? 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                        : 'text-gray-400 cursor-not-allowed'
+                    }
+                  `}
+                  onClick={() => isClickable && handleItemClick(item.id)}
+                >
+                  <span className="text-xl mr-3">{item.icon}</span>
+                  <div className="flex-1">
+                    <div className="font-medium">{item.label}</div>
+                    <div className={`text-xs ${isActive ? 'text-blue-700' : 'text-gray-500'}`}>
+                      {item.description}
+                    </div>
+                  </div>
+                  {isActive && (
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  )}
+                </div>
+              )
+            })}
+          </nav>
+          
+          {/* Footer */}
+          <div className="p-4 border-t border-gray-200">
+            <div className="text-xs text-gray-500 text-center">
+              <div className="mb-2">SignalHub v1.0</div>
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <span>System Online</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* Sidebar Menu */}
-      <nav className="p-4">
-        <ul className="space-y-2">
-          {menuItems.map((item) => {
-            const isActive = activeItem === item.id
-            const itemClasses = `
-              flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200
-              ${isActive 
-                ? 'bg-blue-100 text-blue-700' 
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }
-            `
-
-            return (
-              <li key={item.id}>
-                <div
-                  className={itemClasses}
-                  onClick={() => handleItemClick(item.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      handleItemClick(item.id)
-                    }
-                  }}
-                >
-                  <span className="text-base">{item.icon}</span>
-                  <span>{item.label}</span>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
-    </aside>
+    </>
   )
 }
 
