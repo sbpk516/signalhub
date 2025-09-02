@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
-import { Dashboard, Upload } from '../../pages'
+import { Dashboard, Upload, Results } from '../../pages'
 
 const Layout: React.FC = () => {
   console.log('[LAYOUT] Component rendering...')
@@ -21,10 +21,7 @@ const Layout: React.FC = () => {
       case 'upload':
         return <Upload onUploadComplete={handleUploadComplete} />
       case 'results':
-        return <div className="text-center py-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Results Page</h2>
-          <p className="text-gray-600">Results functionality coming soon...</p>
-        </div>
+        return <Results />
       default:
         return <Dashboard />
     }
@@ -32,7 +29,7 @@ const Layout: React.FC = () => {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header onPageChange={setActivePage} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <Header activePage={activePage} onPageChange={setActivePage} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
       <div className="flex">
         <Sidebar 
           isOpen={sidebarOpen} 

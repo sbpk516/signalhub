@@ -340,6 +340,190 @@ async def get_recent_alerts():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================================
+# PHASE 2: RESULTS ENDPOINTS (Debug-First Implementation)
+# ============================================================================
+
+@app.get("/api/v1/pipeline/results")
+async def get_pipeline_results(
+    status: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    search: str = None,
+    limit: int = 20,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all pipeline results with filtering and pagination.
+    
+    This is a DEBUG-FIRST implementation with extensive logging.
+    """
+    try:
+        logger.info(f"[RESULTS API] Request received - status: {status}, date_from: {date_from}, date_to: {date_to}, search: {search}, limit: {limit}, offset: {offset}")
+        
+        # Start building query
+        query = db.query(Call)
+        
+        # Apply filters with logging
+        if status:
+            logger.info(f"[RESULTS API] Applying status filter: {status}")
+            query = query.filter(Call.status == status)
+        
+        if date_from:
+            logger.info(f"[RESULTS API] Applying date_from filter: {date_from}")
+            # Convert string to datetime for comparison
+            from_date = datetime.fromisoformat(date_from)
+            query = query.filter(Call.created_at >= from_date)
+        
+        if date_to:
+            logger.info(f"[RESULTS API] Applying date_to filter: {date_to}")
+            # Convert string to datetime for comparison
+            to_date = datetime.fromisoformat(date_to)
+            query = query.filter(Call.created_at <= to_date)
+        
+        # Get total count before pagination
+        total_count = query.count()
+        logger.info(f"[RESULTS API] Total records found: {total_count}")
+        
+        # Apply pagination
+        query = query.offset(offset).limit(limit)
+        logger.info(f"[RESULTS API] Applied pagination - offset: {offset}, limit: {limit}")
+        
+        # Execute query
+        calls = query.all()
+        logger.info(f"[RESULTS API] Retrieved {len(calls)} calls from database")
+        
+        # Convert to response format
+        results = []
+        for call in calls:
+            try:
+                result = {
+                    "call_id": call.call_id,
+                    "status": call.status,
+                    "created_at": call.created_at.isoformat() if call.created_at else None,
+                    "file_info": {
+                        "file_path": call.file_path,
+                        "file_size": 0  # Placeholder - we'll enhance this later
+                    },
+                    "audio_analysis": {
+                        "duration": call.duration or 0
+                    },
+                    "transcription": None,  # Placeholder - we'll enhance this later
+                    "nlp_analysis": None    # Placeholder - we'll enhance this later
+                }
+                results.append(result)
+                logger.debug(f"[RESULTS API] Processed call {call.call_id} successfully")
+            except Exception as call_error:
+                logger.error(f"[RESULTS API] Error processing call {call.call_id}: {call_error}")
+                # Continue processing other calls instead of failing completely
+                continue
+        
+        logger.info(f"[RESULTS API] Successfully processed {len(results)} results")
+        
+        response = {
+            "data": {
+                "results": results,
+                "total": total_count,
+                "page": (offset // limit) + 1,
+                "pageSize": limit
+            }
+        }
+        
+        logger.info(f"[RESULTS API] Response prepared successfully - returning {len(results)} results out of {total_count} total")
+        return response
+        
+    except Exception as e:
+        logger.error(f"[RESULTS API] Critical error in get_pipeline_results: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve results: {str(e)}")
+
+
+@app.get("/api/v1/pipeline/results/{call_id}")
+async def get_pipeline_result_detail(
+    call_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed information for a specific pipeline result.
+    
+    This is a DEBUG-FIRST implementation with extensive logging.
+    """
+    try:
+        logger.info(f"[RESULTS API] Detail request received for call_id: {call_id}")
+        
+        # Get call record
+        call = db.query(Call).filter(Call.call_id == call_id).first()
+        if not call:
+            logger.warning(f"[RESULTS API] Call not found: {call_id}")
+            raise HTTPException(status_code=404, detail="Call not found")
+        
+        logger.info(f"[RESULTS API] Call found: {call_id}, status: {call.status}")
+        
+        # Get related transcript if exists
+        transcript = None
+        try:
+            transcript_record = db.query(Transcript).filter(Transcript.call_id == call_id).first()
+            if transcript_record:
+                transcript = {
+                    "transcription_text": transcript_record.transcription_text,
+                    "confidence": transcript_record.confidence or 0.0,
+                    "language": transcript_record.language or "en"
+                }
+                logger.info(f"[RESULTS API] Transcript found for call {call_id}")
+            else:
+                logger.info(f"[RESULTS API] No transcript found for call {call_id}")
+        except Exception as transcript_error:
+            logger.error(f"[RESULTS API] Error retrieving transcript for call {call_id}: {transcript_error}")
+            # Don't fail the entire request if transcript retrieval fails
+        
+        # Get related analysis if exists
+        analysis = None
+        try:
+            analysis_record = db.query(Analysis).filter(Analysis.call_id == call_id).first()
+            if analysis_record:
+                analysis = {
+                    "sentiment": {
+                        "overall": analysis_record.sentiment or "neutral",
+                        "score": analysis_record.sentiment_score or 0.0
+                    },
+                    "intent": {
+                        "detected": analysis_record.intent or "unknown"
+                    },
+                    "keywords": []  # Placeholder - we'll enhance this later
+                }
+                logger.info(f"[RESULTS API] Analysis found for call {call_id}")
+            else:
+                logger.info(f"[RESULTS API] No analysis found for call {call_id}")
+        except Exception as analysis_error:
+            logger.error(f"[RESULTS API] Error retrieving analysis for call {call_id}: {analysis_error}")
+            # Don't fail the entire request if analysis retrieval fails
+        
+        # Build response
+        result = {
+            "call_id": call.call_id,
+            "status": call.status,
+            "created_at": call.created_at.isoformat() if call.created_at else None,
+            "file_info": {
+                "file_path": call.file_path,
+                "file_size": 0  # Placeholder - we'll enhance this later
+            },
+            "audio_analysis": {
+                "duration": call.duration or 0
+            },
+            "transcription": transcript,
+            "nlp_analysis": analysis
+        }
+        
+        logger.info(f"[RESULTS API] Successfully prepared detail response for call {call_id}")
+        return {"data": result}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[RESULTS API] Critical error in get_pipeline_result_detail: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve result details: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
