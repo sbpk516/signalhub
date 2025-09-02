@@ -7,17 +7,15 @@ import {
   ResultsFilters 
 } from '../services/api'
 import { 
-  CallResult, 
-  CallResultSummary, 
-  CallStatus,
-  CallResultSummary as CallResultSummaryType 
+  PipelineResult, 
+  PipelineStatus
 } from '../types/api'
 
 interface ResultsState {
-  results: CallResultSummaryType[]
+  results: PipelineResult[]
   loading: boolean
   error: string | null
-  selectedResult: CallResult | null
+  selectedResult: PipelineResult | null
   showDetailModal: boolean
   filters: ResultsFilters
   searchQuery: string
@@ -123,7 +121,7 @@ const Results: React.FC = () => {
   }, [])
 
   // Handle result selection
-  const handleResultSelect = useCallback(async (result: CallResultSummaryType) => {
+  const handleResultSelect = useCallback(async (result: PipelineResult) => {
     try {
       console.log('[RESULTS] Loading details for result:', result.call_id)
       
@@ -153,8 +151,8 @@ const Results: React.FC = () => {
   }, [])
 
   // Get status badge with emoji
-  const getStatusBadge = (status: CallStatus) => {
-    const statusConfig = {
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { color: string; emoji: string; text: string }> = {
       pending: { color: 'bg-yellow-100 text-yellow-800', emoji: '⏳', text: 'Pending' },
       processing: { color: 'bg-blue-100 text-blue-800', emoji: '🔄', text: 'Processing' },
       completed: { color: 'bg-green-100 text-green-800', emoji: '✅', text: 'Completed' },
@@ -173,7 +171,7 @@ const Results: React.FC = () => {
 
   // Get sentiment badge
   const getSentimentBadge = (sentiment: string) => {
-    const sentimentConfig = {
+    const sentimentConfig: Record<string, { color: string; emoji: string }> = {
       positive: { color: 'bg-green-100 text-green-800', emoji: '😊' },
       negative: { color: 'bg-red-100 text-red-800', emoji: '😞' },
       neutral: { color: 'bg-gray-100 text-gray-800', emoji: '😐' }
@@ -252,7 +250,7 @@ const Results: React.FC = () => {
           <div className="flex space-x-4">
             <select
               value={state.filters.status || ''}
-              onChange={(e) => handleFilterChange({ status: e.target.value as CallStatus || undefined })}
+              onChange={(e) => handleFilterChange({ status: e.target.value || undefined })}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Statuses</option>
@@ -349,7 +347,7 @@ const Results: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {result.file_name || `Call ${result.call_id.slice(0, 8)}`}
+                            {result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : `Call ${result.call_id.slice(0, 8)}`}
                           </div>
                           <div className="text-sm text-gray-500">
                             {new Date(result.created_at).toLocaleDateString()}
@@ -363,10 +361,10 @@ const Results: React.FC = () => {
                         {getStatusBadge(result.status)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {result.duration ? formatDuration(result.duration) : '--'}
+                        {result.audio_analysis?.duration ? formatDuration(result.audio_analysis.duration) : '--'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {result.sentiment ? getSentimentBadge(result.sentiment) : '--'}
+                        {result.nlp_analysis?.sentiment?.overall ? getSentimentBadge(result.nlp_analysis.sentiment.overall) : '--'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
@@ -449,7 +447,7 @@ const Results: React.FC = () => {
             <div className="mt-3">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Call Details: {state.selectedResult.file_name || `Call ${state.selectedResult.call_id.slice(0, 8)}`}
+                  Call Details: {state.selectedResult.file_info?.file_path ? state.selectedResult.file_info.file_path.split('/').pop() : `Call ${state.selectedResult.call_id.slice(0, 8)}`}
                 </h3>
                 <button
                   onClick={closeDetailModal}
@@ -473,13 +471,13 @@ const Results: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Duration</label>
                     <p className="mt-1 text-sm text-gray-900">
-                      {state.selectedResult.duration ? formatDuration(state.selectedResult.duration) : '--'}
+                      {state.selectedResult.audio_analysis?.duration ? formatDuration(state.selectedResult.audio_analysis.duration) : '--'}
                     </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">File Size</label>
                     <p className="mt-1 text-sm text-gray-900">
-                      {state.selectedResult.file_size ? formatFileSize(state.selectedResult.file_size) : '--'}
+                      {state.selectedResult.file_info?.file_size ? formatFileSize(state.selectedResult.file_info.file_size) : '--'}
                     </p>
                   </div>
                   <div>
@@ -491,7 +489,7 @@ const Results: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Sentiment</label>
                     <div className="mt-1">
-                      {state.selectedResult.sentiment ? getSentimentBadge(state.selectedResult.sentiment) : '--'}
+                      {state.selectedResult.nlp_analysis?.sentiment?.overall ? getSentimentBadge(state.selectedResult.nlp_analysis.sentiment.overall) : '--'}
                     </div>
                   </div>
                 </div>
@@ -502,7 +500,7 @@ const Results: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Transcription</label>
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <p className="text-sm text-gray-900 whitespace-pre-wrap">
-                        {state.selectedResult.transcription.text}
+                        {state.selectedResult.transcription.transcription_text}
                       </p>
                       <div className="mt-2 text-xs text-gray-500">
                         Confidence: {(state.selectedResult.transcription.confidence * 100).toFixed(1)}%
@@ -519,14 +517,14 @@ const Results: React.FC = () => {
                       <div>
                         <span className="text-sm font-medium text-gray-700">Sentiment Score: </span>
                         <span className="text-sm text-gray-900">
-                          {state.selectedResult.nlp_analysis.sentiment_score?.toFixed(3) || 'N/A'}
+                          {state.selectedResult.nlp_analysis.sentiment?.score?.toFixed(3) || 'N/A'}
                         </span>
                       </div>
-                      {state.selectedResult.nlp_analysis.key_phrases && state.selectedResult.nlp_analysis.key_phrases.length > 0 && (
+                      {state.selectedResult.nlp_analysis.keywords && state.selectedResult.nlp_analysis.keywords.length > 0 && (
                         <div>
                           <span className="text-sm font-medium text-gray-700">Key Phrases: </span>
                           <div className="flex flex-wrap gap-2 mt-1">
-                            {state.selectedResult.nlp_analysis.key_phrases.map((phrase, index) => (
+                            {state.selectedResult.nlp_analysis.keywords.map((phrase: string, index: number) => (
                               <span key={index} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                 {phrase}
                               </span>
@@ -534,11 +532,11 @@ const Results: React.FC = () => {
                           </div>
                         </div>
                       )}
-                      {state.selectedResult.nlp_analysis.call_classification && (
+                      {state.selectedResult.nlp_analysis.intent?.detected && (
                         <div>
                           <span className="text-sm font-medium text-gray-700">Classification: </span>
                           <span className="text-sm text-gray-900">
-                            {state.selectedResult.nlp_analysis.call_classification}
+                            {state.selectedResult.nlp_analysis.intent.detected}
                           </span>
                         </div>
                       )}
@@ -547,14 +545,14 @@ const Results: React.FC = () => {
                 )}
 
                 {/* Audio File Info */}
-                {state.selectedResult.audio_file_path && (
+                {state.selectedResult.file_info?.file_path && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Audio File</label>
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <p className="text-sm text-gray-900">
-                        Path: {state.selectedResult.audio_file_path}
+                        Path: {state.selectedResult.file_info.file_path}
                       </p>
-                      {state.selectedResult.audio_file_path.includes('processed') && (
+                      {state.selectedResult.file_info.file_path.includes('processed') && (
                         <p className="text-sm text-green-600 mt-1">✓ Audio has been processed</p>
                       )}
                     </div>

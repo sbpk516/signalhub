@@ -1,9 +1,8 @@
 import { apiClient } from './client'
 import { 
-  CallResult, 
-  CallResultSummary, 
-  CallStatus, 
-  APIResponse 
+  PipelineResult, 
+  PipelineStatus, 
+  ApiResponse 
 } from '../../types/api'
 
 /**
@@ -12,7 +11,7 @@ import {
  */
 
 export interface ResultsFilters {
-  status?: CallStatus
+  status?: string
   dateFrom?: string
   dateTo?: string
   searchQuery?: string
@@ -20,17 +19,17 @@ export interface ResultsFilters {
   offset?: number
 }
 
-export interface ResultsResponse extends APIResponse {
+export interface ResultsResponse extends ApiResponse {
   data: {
-    results: CallResultSummary[]
+    results: PipelineResult[]
     total: number
     page: number
     pageSize: number
   }
 }
 
-export interface ResultDetailResponse extends APIResponse {
-  data: CallResult
+export interface ResultDetailResponse extends ApiResponse {
+  data: PipelineResult
 }
 
 /**
@@ -116,7 +115,7 @@ export const fetchResultsByUpload = async (uploadId: string): Promise<ResultsRes
 /**
  * Get real-time status updates for pending/processing calls
  */
-export const fetchStatusUpdates = async (callIds: string[]): Promise<CallResultSummary[]> => {
+export const fetchStatusUpdates = async (callIds: string[]): Promise<PipelineStatus[]> => {
   try {
     if (callIds.length === 0) {
       console.log('[RESULTS API] No call IDs provided for status updates')
