@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     port: int = 8001  # Changed from 8000 to avoid conflicts
     
     # Logging
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"
     log_file: str = "logs/signalhub.log"
     
     # API Configuration

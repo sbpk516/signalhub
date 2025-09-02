@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { Card } from '../components/Shared'
+import { API_ENDPOINTS, ERROR_MESSAGES, SUCCESS_MESSAGES, API_BASE_URL } from '../types/constants'
 
 interface UploadFile {
   id: string
@@ -58,30 +59,86 @@ const Upload: React.FC = () => {
   // Upload file to backend
   const uploadFile = async (file: UploadFile) => {
     try {
+      console.log(`[UPLOAD] Starting upload for file: ${file.name}`)
       setUploading(true)
       
-      // Simulate upload progress (replace with actual API call)
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise(resolve => setTimeout(resolve, 200))
-        setFiles(prev => prev.map(f => 
-          f.id === file.id 
-            ? { ...f, progress: i, status: i === 100 ? 'completed' : 'uploading' }
-            : f
-        ))
-      }
-
-      // TODO: Replace with actual API call
-      // const formData = new FormData()
-      // formData.append('file', file)
-      // const response = await fetch('/api/v1/upload', {
-      //   method: 'POST',
-      //   body: formData
-      // })
-
-    } catch (error) {
+      // Update status to uploading
       setFiles(prev => prev.map(f => 
         f.id === file.id 
-          ? { ...f, status: 'error', error: 'Upload failed' }
+          ? { ...f, status: 'uploading', progress: 0 }
+          : f
+      ))
+
+      // Create FormData for file upload
+      const formData = new FormData()
+      
+      // Get the file from the input element
+      const fileInput = document.getElementById('file-input') as HTMLInputElement
+      if (!fileInput || !fileInput.files) {
+        throw new Error('No file input found')
+      }
+      
+      const actualFile = Array.from(fileInput.files).find(f => f.name === file.name)
+      if (!actualFile) {
+        throw new Error('File not found in input')
+      }
+      
+      formData.append('file', actualFile)
+      
+      console.log(`[UPLOAD] Sending file to: ${API_ENDPOINTS.UPLOAD}`)
+      console.log(`[UPLOAD] File details:`, {
+        name: actualFile.name,
+        size: actualFile.size,
+        type: actualFile.type
+      })
+
+      // Make API call to backend using full URL
+      const fullUrl = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD}`
+      console.log(`[UPLOAD] Full URL: ${fullUrl}`)
+      
+      const response = await fetch(fullUrl, {
+        method: 'POST',
+        body: formData,
+      })
+
+      // Update progress to show upload is complete
+      setFiles(prev => prev.map(f => 
+        f.id === file.id 
+          ? { ...f, progress: 100 }
+          : f
+      ))
+
+      console.log(`[UPLOAD] Response status: ${response.status}`)
+      console.log(`[UPLOAD] Response headers:`, Object.fromEntries(response.headers.entries()))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`[UPLOAD] Upload failed with status ${response.status}:`, errorText)
+        throw new Error(`Upload failed: ${response.status} ${errorText}`)
+      }
+
+      const result = await response.json()
+      console.log(`[UPLOAD] Upload successful:`, result)
+
+      // Update file status to completed
+      setFiles(prev => prev.map(f => 
+        f.id === file.id 
+          ? { ...f, status: 'completed', progress: 100 }
+          : f
+      ))
+
+      console.log(`[UPLOAD] File ${file.name} uploaded successfully!`)
+
+    } catch (error) {
+      console.error(`[UPLOAD] Error uploading ${file.name}:`, error)
+      
+      setFiles(prev => prev.map(f => 
+        f.id === file.id 
+          ? { 
+              ...f, 
+              status: 'error', 
+              error: error instanceof Error ? error.message : 'Upload failed'
+            }
           : f
       ))
     } finally {
@@ -92,6 +149,8 @@ const Upload: React.FC = () => {
   // Start upload for all pending files
   const startUpload = async () => {
     const pendingFiles = files.filter(f => f.status === 'pending')
+    console.log(`[UPLOAD] Starting upload for ${pendingFiles.length} pending files`)
+    
     for (const file of pendingFiles) {
       await uploadFile(file)
     }
