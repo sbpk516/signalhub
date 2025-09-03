@@ -21,6 +21,15 @@ from .logging_config import log_function_call, log_file_operation, PerformanceMo
 import logging
 logger = logging.getLogger('signalhub.upload')
 
+# Import for duration calculation
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+    logger.info("pydub available for duration calculation")
+except ImportError:
+    PYDUB_AVAILABLE = False
+    logger.warning("pydub not available, duration will not be calculated")
+
 # Allowed audio file extensions
 ALLOWED_AUDIO_EXTENSIONS = [".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac"]
 
@@ -33,6 +42,29 @@ class AudioUploadHandler:
         self.upload_dir = Path(settings.upload_dir)
         self.upload_dir.mkdir(exist_ok=True)
         logger.info(f"Audio upload handler initialized with upload directory: {self.upload_dir}")
+    
+    def _calculate_audio_duration(self, file_path: str) -> Optional[float]:
+        """
+        Calculate audio duration in seconds using pydub.
+        
+        Args:
+            file_path: Path to the audio file
+            
+        Returns:
+            Duration in seconds, or None if calculation fails
+        """
+        if not PYDUB_AVAILABLE:
+            logger.warning("Cannot calculate duration: pydub not available")
+            return None
+            
+        try:
+            audio = AudioSegment.from_file(file_path)
+            duration_seconds = len(audio) / 1000.0  # pydub returns milliseconds
+            logger.info(f"Calculated duration for {file_path}: {duration_seconds}s")
+            return duration_seconds
+        except Exception as e:
+            logger.error(f"Failed to calculate duration for {file_path}: {e}")
+            return None
     
     @log_function_call
     async def validate_upload(self, file: UploadFile) -> Dict[str, Any]:
@@ -114,7 +146,7 @@ class AudioUploadHandler:
             raise HTTPException(status_code=500, detail="Failed to save file")
     
     @log_function_call
-    async def create_call_record(self, db: Session, file_path: str, original_filename: str, call_id: str) -> Call:
+    async def create_call_record(self, db: Session, file_path: str, original_filename: str, call_id: str, file_size_bytes: int) -> Call:
         """
         Create a call record in the database.
         
@@ -123,16 +155,20 @@ class AudioUploadHandler:
             file_path: Path to saved audio file
             original_filename: Original uploaded filename
             call_id: Pre-generated call ID to use
+            file_size_bytes: Size of the uploaded file in bytes
             
         Returns:
             Created Call object
         """
-        # Use the provided call ID instead of generating a new one
+        # Calculate audio duration
+        duration_seconds = self._calculate_audio_duration(file_path)
         
         # Create call record
         call = Call(
             call_id=call_id,
             file_path=file_path,
+            file_size_bytes=file_size_bytes,  # Store the file size
+            duration=duration_seconds,  # Store the calculated duration
             status="uploaded",  # Initial status
             created_at=datetime.now()
         )
@@ -142,7 +178,7 @@ class AudioUploadHandler:
             db.commit()
             db.refresh(call)
             
-            logger.info(f"Call record created: {call_id}")
+            logger.info(f"Call record created: {call_id} with duration: {duration_seconds}s")
             return call
             
         except Exception as e:
@@ -195,7 +231,7 @@ async def upload_audio_file(
             
             # Step 4: Create database record
             db_session = next(get_db())
-            call = await upload_handler.create_call_record(db_session, file_path, file.filename, call_id)
+            call = await upload_handler.create_call_record(db_session, file_path, file.filename, call_id, validation_result["file_info"]["size"])
             
             # Step 5: Return success response
             result = {

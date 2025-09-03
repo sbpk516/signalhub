@@ -344,6 +344,32 @@ async def get_recent_alerts():
 # PHASE 2: RESULTS ENDPOINTS (Debug-First Implementation)
 # ============================================================================
 
+# Helper function to format file sizes
+def _format_file_size(file_size_bytes: int) -> str:
+    """Format file size in bytes to human readable format."""
+    if not file_size_bytes or file_size_bytes <= 0:
+        return "Unknown"
+    
+    if file_size_bytes < 1024:
+        return f"{file_size_bytes} B"
+    elif file_size_bytes < 1024 * 1024:
+        return f"{file_size_bytes // 1024} KB"
+    else:
+        return f"{file_size_bytes // (1024 * 1024):.1f} MB"
+
+# Helper function to format duration
+def _format_duration(duration_seconds: int) -> str:
+    """Format duration in seconds to human readable format."""
+    if not duration_seconds or duration_seconds <= 0:
+        return "Unknown"
+    
+    if duration_seconds < 60:
+        return f"{duration_seconds}s"
+    else:
+        minutes = duration_seconds // 60
+        seconds = duration_seconds % 60
+        return f"{minutes}m {seconds}s"
+
 @app.get("/api/v1/pipeline/results")
 async def get_pipeline_results(
     status: str = None,
@@ -404,10 +430,12 @@ async def get_pipeline_results(
                     "created_at": call.created_at.isoformat() if call.created_at else None,
                     "file_info": {
                         "file_path": call.file_path,
-                        "file_size": 0  # Placeholder - we'll enhance this later
+                        "file_size_bytes": call.file_size_bytes or 0,
+                        "file_size": _format_file_size(call.file_size_bytes)
                     },
                     "audio_analysis": {
-                        "duration": call.duration or 0
+                        "duration_seconds": call.duration or 0,
+                        "duration": _format_duration(call.duration)
                     },
                     "transcription": None,  # Placeholder - we'll enhance this later
                     "nlp_analysis": None    # Placeholder - we'll enhance this later
@@ -505,10 +533,12 @@ async def get_pipeline_result_detail(
             "created_at": call.created_at.isoformat() if call.created_at else None,
             "file_info": {
                 "file_path": call.file_path,
-                "file_size": 0  # Placeholder - we'll enhance this later
+                "file_size_bytes": call.file_size_bytes or 0,
+                "file_size": _format_file_size(call.file_size_bytes)
             },
             "audio_analysis": {
-                "duration": call.duration or 0
+                "duration_seconds": call.duration or 0,
+                "duration": _format_duration(call.duration)
             },
             "transcription": transcript,
             "nlp_analysis": analysis

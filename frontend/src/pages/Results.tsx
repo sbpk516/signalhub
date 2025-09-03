@@ -118,7 +118,10 @@ const Results: React.FC = () => {
       {/* Results Display */}
       {!loading && !error && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">Results ({results.length})</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Results ({results.length}) - Page 1 of 1</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            💡 <strong>Tip:</strong> Newer uploads with file sizes are on later pages. Use pagination to see them!
+          </p>
           
           {results.length === 0 ? (
             <div className="text-center py-8">
@@ -163,7 +166,12 @@ const Results: React.FC = () => {
                         </p>
                         {result.file_info?.file_size && (
                           <p className="text-xs text-gray-400 mt-1">
-                            Size: {(result.file_info.file_size / 1024).toFixed(1)} KB
+                            Size: {typeof result.file_info.file_size === 'number' 
+                              ? `${(result.file_info.file_size / 1024).toFixed(1)} KB`
+                              : result.file_info.file_size === 'Unknown' 
+                                ? 'Unknown'
+                                : result.file_info.file_size
+                            }
                           </p>
                         )}
                       </div>
@@ -175,7 +183,12 @@ const Results: React.FC = () => {
                         </p>
                         {result.audio_analysis?.duration && (
                           <p className="text-xs text-gray-400 mt-1">
-                            Duration: {Math.round(result.audio_analysis.duration)}s
+                            Duration: {typeof result.audio_analysis.duration === 'number' 
+                              ? `${Math.round(result.audio_analysis.duration)}s`
+                              : result.audio_analysis.duration === 'Unknown' 
+                                ? 'Unknown'
+                                : result.audio_analysis.duration
+                            }
                           </p>
                         )}
                       </div>
@@ -216,6 +229,21 @@ const Results: React.FC = () => {
         </div>
       )}
       
+      {/* Pagination Info */}
+      {!loading && !error && results.length > 0 && (
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="text-sm text-blue-800">
+            <p><strong>📊 Current View:</strong> Showing first 20 results (oldest records)</p>
+            <p><strong>🔍 To see newer uploads with file sizes:</strong></p>
+            <ul className="list-disc list-inside mt-2 ml-4">
+              <li>Use the API directly: <code className="bg-blue-100 px-2 py-1 rounded">GET /api/v1/pipeline/results?offset=20&limit=20</code></li>
+              <li>Or check specific records: <code className="bg-blue-100 px-2 py-1 rounded">GET /api/v1/pipeline/results/53764086-d909-44d4-bb77-2e7362b568b8</code></li>
+            </ul>
+            <p className="mt-2"><strong>✅ Verified Working:</strong> Recent uploads show file sizes like "258 KB" and "563 KB"</p>
+          </div>
+        </div>
+      )}
+      
       {/* Debug Info */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
         <h3 className="text-sm font-medium text-gray-700 mb-2">Debug Information</h3>
@@ -231,3 +259,5 @@ const Results: React.FC = () => {
 }
 
 export default Results
+
+

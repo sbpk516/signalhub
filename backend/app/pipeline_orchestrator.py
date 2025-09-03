@@ -329,7 +329,7 @@ class AudioProcessingPipeline:
             # Create call record in database
             db_session = next(self._get_db())
             call_record = await self.upload_handler.create_call_record(
-                db_session, file_path, file.filename, call_id
+                db_session, file_path, file.filename, call_id, validation_result["file_info"]["size"]
             )
             
             # Update database status
