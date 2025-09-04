@@ -187,9 +187,6 @@ const Results: React.FC = () => {
                         <p className="text-sm font-medium text-gray-900">
                           Call ID: {result.call_id?.slice(0, 8) || 'Unknown'}
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          File: {result.file_info?.original_filename || (result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : 'Unknown')}
-                        </p>
                         <div className="mt-1">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             result.status === 'completed' ? 'bg-green-100 text-green-800' :
@@ -208,8 +205,19 @@ const Results: React.FC = () => {
                       {/* File Info */}
                       <div>
                         <p className="text-sm text-gray-500">
-                          File: {result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : 'Unknown'}
+                          {(() => {
+                            const storedName = result.file_info?.file_path 
+                              ? result.file_info.file_path.split('/').pop() 
+                              : null
+                            const original = result.file_info?.original_filename || storedName || 'Unknown'
+                            return <>File: {original}</>
+                          })()}
                         </p>
+                        {result.file_info?.original_filename && result.file_info?.file_path && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Stored as: {result.file_info.file_path.split('/').pop()}
+                          </p>
+                        )}
                         {result.file_info?.file_size && (
                           <p className="text-xs text-gray-400 mt-1">
                             Size: {typeof result.file_info.file_size === 'number' 
