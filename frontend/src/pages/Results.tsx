@@ -187,6 +187,9 @@ const Results: React.FC = () => {
                         <p className="text-sm font-medium text-gray-900">
                           Call ID: {result.call_id?.slice(0, 8) || 'Unknown'}
                         </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          File: {result.file_info?.original_filename || (result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : 'Unknown')}
+                        </p>
                         <div className="mt-1">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             result.status === 'completed' ? 'bg-green-100 text-green-800' :
@@ -250,18 +253,18 @@ const Results: React.FC = () => {
                       <div className="mt-4 p-4 border-t border-gray-100 bg-gray-50 rounded">
                         <div className="flex items-center justify-between mb-3">
                           <div className="text-sm text-gray-500">Call ID: {result.call_id}</div>
-                          <div className="flex items-center gap-3">
-                            {reanalyzingId === result.call_id && (
-                              <span className="text-sm text-gray-600">Reanalyzing…</span>
-                            )}
-                            <button
-                              onClick={() => reanalyzeCall(result.call_id)}
-                              disabled={reanalyzingId === result.call_id}
-                              className={`px-3 py-1.5 rounded-md text-sm font-medium ${reanalyzingId === result.call_id ? 'bg-gray-300 text-gray-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-                            >
-                              Reanalyze
-                            </button>
-                          </div>
+                        <div className="flex items-center gap-3">
+                          {reanalyzingId === result.call_id && (
+                            <span className="text-sm text-gray-600">Reanalyzing…</span>
+                          )}
+                          <button
+                            onClick={() => reanalyzeCall(result.call_id)}
+                            disabled={reanalyzingId === result.call_id}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium ${reanalyzingId === result.call_id ? 'bg-gray-300 text-gray-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                          >
+                            Reanalyze
+                          </button>
+                        </div>
                         </div>
                         {detailLoadingId === result.call_id && (
                           <div className="text-sm text-gray-600">Loading details…</div>

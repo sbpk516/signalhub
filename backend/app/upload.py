@@ -167,6 +167,7 @@ class AudioUploadHandler:
         call = Call(
             call_id=call_id,
             file_path=file_path,
+            original_filename=original_filename,
             file_size_bytes=file_size_bytes,  # Store the file size
             duration=duration_seconds,  # Store the calculated duration
             status="uploaded",  # Initial status

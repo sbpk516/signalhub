@@ -494,6 +494,7 @@ async def get_pipeline_results(
                     "created_at": call.created_at.isoformat() if call.created_at else None,
                     "file_info": {
                         "file_path": call.file_path,
+                        "original_filename": getattr(call, 'original_filename', None),
                         "file_size_bytes": call.file_size_bytes or 0,
                         "file_size": _format_file_size(call.file_size_bytes)
                     },
@@ -616,6 +617,7 @@ async def get_pipeline_result_detail(
             "created_at": call.created_at.isoformat() if call.created_at else None,
             "file_info": {
                 "file_path": call.file_path,
+                "original_filename": getattr(call, 'original_filename', None),
                 "file_size_bytes": call.file_size_bytes or 0,
                 "file_size": _format_file_size(call.file_size_bytes)
             },
