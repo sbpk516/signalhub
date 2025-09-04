@@ -223,8 +223,16 @@ const Results: React.FC = () => {
                       
                       {/* Date and Duration */}
                       <div className="text-right">
-                        <p className="text-sm text-gray-500">
-                          {result.created_at ? new Date(result.created_at).toLocaleDateString() : 'Unknown date'}
+                        <p
+                          className="text-sm text-gray-500"
+                          title={result.created_at || ''}
+                        >
+                          {result.created_at
+                            ? new Date(result.created_at).toLocaleString(undefined, {
+                                year: 'numeric', month: 'short', day: '2-digit',
+                                hour: '2-digit', minute: '2-digit'
+                              })
+                            : 'Unknown date'}
                         </p>
                         {result.audio_analysis?.duration && (
                           <p className="text-xs text-gray-400 mt-1">
