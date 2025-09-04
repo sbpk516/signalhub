@@ -23,6 +23,7 @@ from .debug_utils import debug_helper
 from .logging_config import log_function_call, PerformanceMonitor
 from .models import Call
 from .pipeline_monitor import pipeline_monitor
+from .pipeline_logger import pipeline_logger
 
 # Configure logger for this module
 logger = logging.getLogger('signalhub.pipeline_orchestrator')
