@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { apiClient } from '@/services/api/client'
 
 // STEP 2: Add basic API integration
 // We'll add API call to fetch results from backend
@@ -9,6 +10,12 @@ const Results: React.FC = () => {
   const [results, setResults] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
   
+  // Detail view (lazy-loaded per call)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null)
+  const [detailsCache, setDetailsCache] = useState<Record<string, any>>({})
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
+  
   console.log('[RESULTS] Component rendering - Step 2 with API integration')
   
   // STEP 2: Add API call function
@@ -18,14 +25,8 @@ const Results: React.FC = () => {
       setLoading(true)
       setError(null)
       
-      // Call the backend API endpoint
-      const response = await fetch('http://localhost:8001/api/v1/pipeline/results')
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
+      // Call the backend API endpoint using shared API client (respects base URL)
+      const { data } = await apiClient.get('/api/v1/pipeline/results')
       console.log('[RESULTS] 📥 API Response received:', data)
       
       // Extract results from response
@@ -40,6 +41,32 @@ const Results: React.FC = () => {
       setError(errorMessage)
     } finally {
       setLoading(false)
+    }
+  }
+  
+  const fetchResultDetail = async (callId: string) => {
+    try {
+      setDetailLoadingId(callId)
+      const { data } = await apiClient.get(`/api/v1/pipeline/results/${callId}`)
+      const detail = data?.data || null
+      setDetailsCache(prev => ({ ...prev, [callId]: detail }))
+      setDetailErrors(prev => ({ ...prev, [callId]: '' }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch details'
+      setDetailErrors(prev => ({ ...prev, [callId]: msg }))
+    } finally {
+      setDetailLoadingId(null)
+    }
+  }
+
+  const onToggleDetails = (callId: string) => {
+    if (expandedId === callId) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(callId)
+    if (!detailsCache[callId] && detailLoadingId !== callId) {
+      fetchResultDetail(callId)
     }
   }
   
@@ -191,34 +218,58 @@ const Results: React.FC = () => {
                             }
                           </p>
                         )}
+                        <div className="mt-3">
+                          <button
+                            onClick={() => onToggleDetails(result.call_id)}
+                            className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            {expandedId === result.call_id ? 'Hide details' : 'View details'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                     
-                    {/* Additional Details */}
-                    {(result.transcription || result.nlp_analysis) && (
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-600">
-                          {result.transcription && (
+                    {/* Lazy-loaded Details Panel */}
+                    {expandedId === result.call_id && (
+                      <div className="mt-4 p-4 border-t border-gray-100 bg-gray-50 rounded">
+                        {detailLoadingId === result.call_id && (
+                          <div className="text-sm text-gray-600">Loading details…</div>
+                        )}
+                        {detailErrors[result.call_id] && (
+                          <div className="text-sm text-red-600">{detailErrors[result.call_id]}</div>
+                        )}
+                        {detailsCache[result.call_id] && (
+                          <div className="space-y-3">
                             <div>
-                              <span className="font-medium">Transcription:</span> 
-                              <span className="ml-1">
-                                {result.transcription.transcription_text?.slice(0, 100) || 'No text'}...
-                              </span>
+                              <div className="text-xs text-gray-500 mb-1">Transcript</div>
+                              <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                                {detailsCache[result.call_id]?.transcription?.transcription_text || 'No transcript available'}
+                              </div>
                             </div>
-                          )}
-                          {result.nlp_analysis?.sentiment?.overall && (
-                            <div>
-                              <span className="font-medium">Sentiment:</span> 
-                              <span className={`ml-1 ${
-                                result.nlp_analysis.sentiment.overall === 'positive' ? 'text-green-600' :
-                                result.nlp_analysis.sentiment.overall === 'negative' ? 'text-red-600' :
-                                'text-gray-600'
-                              }`}>
-                                {result.nlp_analysis.sentiment.overall}
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                            {detailsCache[result.call_id]?.nlp_analysis && (
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                <div>
+                                  <div className="text-xs text-gray-500">Sentiment</div>
+                                  <div className="font-medium">
+                                    {detailsCache[result.call_id].nlp_analysis.sentiment?.overall || 'neutral'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">Intent</div>
+                                  <div className="font-medium">
+                                    {detailsCache[result.call_id].nlp_analysis.intent?.detected || 'unknown'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-gray-500">Risk</div>
+                                  <div className="font-medium">
+                                    {detailsCache[result.call_id].nlp_analysis.risk?.escalation_risk || 'low'}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -259,5 +310,3 @@ const Results: React.FC = () => {
 }
 
 export default Results
-
-

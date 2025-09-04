@@ -492,9 +492,10 @@ async def get_pipeline_result_detail(
         try:
             transcript_record = db.query(Transcript).filter(Transcript.call_id == call_id).first()
             if transcript_record:
+                # Map model field `text` to API field `transcription_text` expected by frontend
                 transcript = {
-                    "transcription_text": transcript_record.transcription_text,
-                    "confidence": transcript_record.confidence or 0.0,
+                    "transcription_text": transcript_record.text or "",
+                    "confidence": transcript_record.confidence or 0,
                     "language": transcript_record.language or "en"
                 }
                 logger.info(f"[RESULTS API] Transcript found for call {call_id}")
