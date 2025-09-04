@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
 import logging
+import json
 import os
 
 from .config import settings
@@ -16,6 +17,8 @@ from .upload import upload_audio_file, get_upload_status
 from .pipeline_orchestrator import AudioProcessingPipeline
 from .pipeline_monitor import pipeline_monitor
 from .debug_utils import debug_helper
+from .nlp_processor import nlp_processor
+from .db_integration import db_integration
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -299,6 +302,67 @@ async def get_pipeline_history(limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/v1/pipeline/reanalyze/{call_id}")
+async def reanalyze_call(call_id: str, db: Session = Depends(get_db)):
+    """
+    Re-run NLP analysis for an existing call using its stored transcript.
+    - Looks up transcript by call_id
+    - Runs NLP analysis via nlp_processor
+    - Persists results via DatabaseIntegration
+    - Returns the newly stored analysis summary
+
+    Note: This adds another entry to the analyses table for the call.
+    """
+    try:
+        logger.info(f"[REANALYZE] Request received for call_id: {call_id}")
+
+        # Validate call exists
+        call = db.query(Call).filter(Call.call_id == call_id).first()
+        if not call:
+            raise HTTPException(status_code=404, detail="Call not found")
+
+        # Get transcript text
+        transcript_record = db.query(Transcript).filter(Transcript.call_id == call_id).first()
+        if not transcript_record or not (transcript_record.text or '').strip():
+            raise HTTPException(status_code=400, detail="No transcript available for this call")
+
+        text = transcript_record.text
+        logger.info(f"[REANALYZE] Transcript loaded (len={len(text)}) for call {call_id}")
+
+        # Run NLP analysis
+        analysis = await nlp_processor.analyze_text(text, call_id)
+        logger.info(f"[REANALYZE] NLP analysis completed for call {call_id}")
+
+        # Store NLP analysis
+        store_result = db_integration.store_nlp_analysis(call_id, analysis)
+        logger.info(f"[REANALYZE] NLP analysis stored for call {call_id}: success={store_result.get('store_success')}")
+
+        if not store_result.get('store_success'):
+            err = store_result.get('error', 'Unknown error while storing analysis')
+            raise HTTPException(status_code=500, detail=f"Failed to store analysis: {err}")
+
+        # Build API response
+        response = {
+            "call_id": call_id,
+            "stored": store_result.get("store_success", False),
+            "analysis": {
+                "sentiment": analysis.get("sentiment", {}),
+                "intent": analysis.get("intent", {}),
+                "risk": analysis.get("risk", {}),
+                "keywords": analysis.get("keywords", [])
+            },
+            "store_result": store_result
+        }
+
+        return {"message": "Reanalysis completed", "data": response, "timestamp": datetime.now().isoformat()}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[REANALYZE] Failed for call {call_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to reanalyze call: {str(e)}")
+
+
 @app.get("/api/v1/monitor/performance")
 async def get_performance_summary():
     """
@@ -510,15 +574,33 @@ async def get_pipeline_result_detail(
         try:
             analysis_record = db.query(Analysis).filter(Analysis.call_id == call_id).first()
             if analysis_record:
+                # Parse keywords/topics JSON safely
+                try:
+                    keywords = json.loads(analysis_record.keywords) if analysis_record.keywords else []
+                except Exception:
+                    keywords = []
+                try:
+                    topics = json.loads(analysis_record.topics) if analysis_record.topics else []
+                except Exception:
+                    topics = []
+
                 analysis = {
                     "sentiment": {
                         "overall": analysis_record.sentiment or "neutral",
-                        "score": analysis_record.sentiment_score or 0.0
+                        "score": analysis_record.sentiment_score or 0
                     },
                     "intent": {
-                        "detected": analysis_record.intent or "unknown"
+                        "detected": analysis_record.intent or "unknown",
+                        "confidence": (analysis_record.intent_confidence or 0) / 100.0
                     },
-                    "keywords": []  # Placeholder - we'll enhance this later
+                    "risk": {
+                        "escalation_risk": analysis_record.escalation_risk or "low",
+                        "risk_score": analysis_record.risk_score or 0,
+                        "urgency_level": analysis_record.urgency_level or "low",
+                        "compliance_risk": analysis_record.compliance_risk or "none"
+                    },
+                    "keywords": keywords,
+                    "topics": topics
                 }
                 logger.info(f"[RESULTS API] Analysis found for call {call_id}")
             else:

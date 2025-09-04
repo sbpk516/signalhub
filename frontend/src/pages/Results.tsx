@@ -15,6 +15,8 @@ const Results: React.FC = () => {
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null)
   const [detailsCache, setDetailsCache] = useState<Record<string, any>>({})
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null)
+  const [reanalyzeErrors, setReanalyzeErrors] = useState<Record<string, string>>({})
   
   console.log('[RESULTS] Component rendering - Step 2 with API integration')
   
@@ -67,6 +69,20 @@ const Results: React.FC = () => {
     setExpandedId(callId)
     if (!detailsCache[callId] && detailLoadingId !== callId) {
       fetchResultDetail(callId)
+    }
+  }
+
+  const reanalyzeCall = async (callId: string) => {
+    try {
+      setReanalyzingId(callId)
+      setReanalyzeErrors(prev => ({ ...prev, [callId]: '' }))
+      await apiClient.post(`/api/v1/pipeline/reanalyze/${callId}`)
+      await fetchResultDetail(callId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to reanalyze call'
+      setReanalyzeErrors(prev => ({ ...prev, [callId]: msg }))
+    } finally {
+      setReanalyzingId(null)
     }
   }
   
@@ -232,11 +248,29 @@ const Results: React.FC = () => {
                     {/* Lazy-loaded Details Panel */}
                     {expandedId === result.call_id && (
                       <div className="mt-4 p-4 border-t border-gray-100 bg-gray-50 rounded">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm text-gray-500">Call ID: {result.call_id}</div>
+                          <div className="flex items-center gap-3">
+                            {reanalyzingId === result.call_id && (
+                              <span className="text-sm text-gray-600">Reanalyzing…</span>
+                            )}
+                            <button
+                              onClick={() => reanalyzeCall(result.call_id)}
+                              disabled={reanalyzingId === result.call_id}
+                              className={`px-3 py-1.5 rounded-md text-sm font-medium ${reanalyzingId === result.call_id ? 'bg-gray-300 text-gray-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                            >
+                              Reanalyze
+                            </button>
+                          </div>
+                        </div>
                         {detailLoadingId === result.call_id && (
                           <div className="text-sm text-gray-600">Loading details…</div>
                         )}
                         {detailErrors[result.call_id] && (
                           <div className="text-sm text-red-600">{detailErrors[result.call_id]}</div>
+                        )}
+                        {reanalyzeErrors[result.call_id] && (
+                          <div className="text-sm text-red-600">{reanalyzeErrors[result.call_id]}</div>
                         )}
                         {detailsCache[result.call_id] && (
                           <div className="space-y-3">
@@ -266,6 +300,11 @@ const Results: React.FC = () => {
                                     {detailsCache[result.call_id].nlp_analysis.risk?.escalation_risk || 'low'}
                                   </div>
                                 </div>
+                              </div>
+                            )}
+                            {!detailsCache[result.call_id]?.nlp_analysis && (
+                              <div className="text-sm text-gray-600">
+                                No analysis available — this call wasn’t processed by the full pipeline or NLP failed.
                               </div>
                             )}
                           </div>

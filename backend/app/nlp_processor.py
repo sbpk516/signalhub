@@ -19,7 +19,7 @@ import string
 # NLP Libraries
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -44,6 +44,7 @@ class NLPProcessor:
         self.models_loaded = False
         self.models = {}
         self.cache = {}
+        self.nltk_available = False
         
         # Initialize NLTK components
         self._initialize_nltk()
@@ -92,22 +93,48 @@ class NLPProcessor:
     def _initialize_nltk(self):
         """Initialize NLTK components and download required data."""
         try:
-            # Download required NLTK data
-            nltk.download('punkt', quiet=True)
-            nltk.download('stopwords', quiet=True)
-            nltk.download('wordnet', quiet=True)
-            nltk.download('averaged_perceptron_tagger', quiet=True)
-            
-            # Initialize NLTK components
-            self.stop_words = set(stopwords.words('english'))
-            self.lemmatizer = WordNetLemmatizer()
-            
-            self.logger.info("NLTK components initialized successfully")
+            # Attempt to download required NLTK data (no-op if present)
+            try:
+                nltk.download('punkt', quiet=True)
+                nltk.download('stopwords', quiet=True)
+                nltk.download('wordnet', quiet=True)
+            except Exception as dl_err:
+                # Download failures are tolerated; we will fall back
+                self.logger.warning(f"NLTK download failed or unavailable, falling back: {dl_err}")
+
+            # Try to initialize components; if this fails, use fallbacks
+            try:
+                self.stop_words = set(stopwords.words('english'))
+                self.lemmatizer = WordNetLemmatizer()
+                # Probe tokenizer once
+                _ = word_tokenize("probe")
+                self.nltk_available = True
+                self.logger.info("NLTK components initialized successfully")
+            except Exception as init_err:
+                self.logger.warning(f"NLTK resources not available, using offline-safe fallbacks: {init_err}")
+                # Fallback stop words (minimal)
+                self.stop_words = set([
+                    'the','a','an','is','are','am','and','or','but','if','then','else','for','to','of','in','on','with','by','as','at','this','that','these','those','be','been','being','it','its','we','you','they','he','she','i','me','my','our','your','their'
+                ])
+                # Fallback lemmatizer: identity
+                class _IdentityLemmatizer:
+                    def lemmatize(self, token: str) -> str:
+                        return token
+                self.lemmatizer = _IdentityLemmatizer()
+                self.nltk_available = False
             
         except Exception as e:
             self.logger.error(f"Failed to initialize NLTK: {e}")
             debug_helper.capture_exception("nlp_nltk_init", e, {})
-            raise
+            # Use fallbacks if any unexpected error occurs
+            self.stop_words = set([
+                'the','a','an','is','are','am','and','or','but','if','then','else','for','to','of','in','on','with','by','as','at','this','that','these','those','be','been','being','it','its','we','you','they','he','she','i','me','my','our','your','their'
+            ])
+            class _IdentityLemmatizer:
+                def lemmatize(self, token: str) -> str:
+                    return token
+            self.lemmatizer = _IdentityLemmatizer()
+            self.nltk_available = False
     
     async def load_models(self):
         """Load and cache NLP models asynchronously."""
@@ -183,8 +210,12 @@ class NLPProcessor:
             # Preprocess text
             clean_text = self.preprocess_text(text)
             
-            # Tokenize
-            tokens = word_tokenize(clean_text)
+            # Tokenize (fallback to regex if NLTK tokenizer unavailable)
+            if self.nltk_available:
+                tokens = word_tokenize(clean_text)
+            else:
+                # Simple regex tokenization on word boundaries
+                tokens = re.findall(r"[A-Za-z0-9']+", clean_text)
             
             # Remove stop words and short tokens
             keywords = [

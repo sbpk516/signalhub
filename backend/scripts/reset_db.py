@@ -17,6 +17,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.app.database import drop_tables, create_tables
+# Ensure models are registered with SQLAlchemy Base before (re)creating tables
+from backend.app import models as _models  # noqa: F401
 
 def main() -> None:
     print("[DB-RESET] Dropping all tables...")

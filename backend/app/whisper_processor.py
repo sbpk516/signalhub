@@ -228,9 +228,9 @@ class WhisperProcessor:
     
     @log_function_call
     def save_transcript(
-        self, 
-        transcription_data: Dict[str, Any], 
-        call_id: str
+        self,
+        call_id: str,
+        transcription_data: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
         Save transcription results to file and database.
