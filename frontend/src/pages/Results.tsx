@@ -204,7 +204,7 @@ const Results: React.FC = () => {
                       
                       {/* File Info */}
                       <div>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-500 truncate" title={(result.file_info?.original_filename || (result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : 'Unknown'))}>
                           {(() => {
                             const storedName = result.file_info?.file_path 
                               ? result.file_info.file_path.split('/').pop() 
@@ -260,7 +260,16 @@ const Results: React.FC = () => {
                     {expandedId === result.call_id && (
                       <div className="mt-4 p-4 border-t border-gray-100 bg-gray-50 rounded">
                         <div className="flex items-center justify-between mb-3">
-                          <div className="text-sm text-gray-500">Call ID: {result.call_id}</div>
+                          <div className="text-sm text-gray-500 flex items-center gap-3 min-w-0">
+                            <span className="shrink-0">Call ID: {result.call_id}</span>
+                            <span className="text-gray-300">|</span>
+                            <span
+                              className="text-gray-600 max-w-[28rem] truncate"
+                              title={result.file_info?.original_filename || (result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : 'Unknown')}
+                            >
+                              File: {result.file_info?.original_filename || (result.file_info?.file_path ? result.file_info.file_path.split('/').pop() : 'Unknown')}
+                            </span>
+                          </div>
                         <div className="flex items-center gap-3">
                           {reanalyzingId === result.call_id && (
                             <span className="text-sm text-gray-600">Reanalyzing…</span>
