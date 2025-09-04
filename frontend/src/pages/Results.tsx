@@ -122,15 +122,6 @@ const Results: React.FC = () => {
               {loading ? '🔄' : '🔄'} Refresh Results
             </button>
             
-            <button
-              onClick={() => {
-                console.log('[RESULTS] 🧪 Test button clicked - current state:', { loading, error, resultsCount: results.length })
-                alert(`Current Results State:\n- Loading: ${loading}\n- Error: ${error || 'None'}\n- Results: ${results.length} items`)
-              }}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              🧪 Test State
-            </button>
           </div>
         </div>
       </div>
@@ -339,31 +330,9 @@ const Results: React.FC = () => {
         </div>
       )}
       
-      {/* Pagination Info */}
-      {!loading && !error && results.length > 0 && (
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="text-sm text-blue-800">
-            <p><strong>📊 Current View:</strong> Showing first 20 results (oldest records)</p>
-            <p><strong>🔍 To see newer uploads with file sizes:</strong></p>
-            <ul className="list-disc list-inside mt-2 ml-4">
-              <li>Use the API directly: <code className="bg-blue-100 px-2 py-1 rounded">GET /api/v1/pipeline/results?offset=20&limit=20</code></li>
-              <li>Or check specific records: <code className="bg-blue-100 px-2 py-1 rounded">GET /api/v1/pipeline/results/53764086-d909-44d4-bb77-2e7362b568b8</code></li>
-            </ul>
-            <p className="mt-2"><strong>✅ Verified Working:</strong> Recent uploads show file sizes like "258 KB" and "563 KB"</p>
-          </div>
-        </div>
-      )}
+      {/* Pagination Info removed (debug helper) */}
       
-      {/* Debug Info */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">Debug Information</h3>
-        <div className="text-xs text-gray-600 space-y-1">
-          <div><strong>Loading:</strong> {loading ? 'Yes' : 'No'}</div>
-          <div><strong>Error:</strong> {error || 'None'}</div>
-          <div><strong>Results Count:</strong> {results.length}</div>
-          <div><strong>Last API Call:</strong> {loading ? 'In Progress...' : 'Completed'}</div>
-        </div>
-      </div>
+      {/* Debug Information removed */}
     </div>
   )
 }
