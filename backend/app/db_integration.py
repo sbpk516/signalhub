@@ -387,6 +387,34 @@ class DatabaseIntegration:
                         "store_timestamp": datetime.now().isoformat()
                     }
                 
+                # If audio analysis provided duration or file size, persist to call record
+                try:
+                    duration_seconds = int(analysis_data.get("duration_seconds", 0) or 0)
+                except Exception:
+                    duration_seconds = 0
+
+                try:
+                    file_size_bytes = int(analysis_data.get("file_size_bytes", 0) or 0)
+                except Exception:
+                    file_size_bytes = 0
+
+                updated_fields = {}
+                if duration_seconds and (call_record.duration is None or call_record.duration == 0):
+                    call_record.duration = duration_seconds
+                    updated_fields["duration"] = duration_seconds
+
+                if file_size_bytes and (call_record.file_size_bytes is None or call_record.file_size_bytes == 0):
+                    call_record.file_size_bytes = file_size_bytes
+                    updated_fields["file_size_bytes"] = file_size_bytes
+
+                if updated_fields:
+                    # Touch updated_at by committing the change
+                    db_session.add(call_record)
+                    db_session.commit()
+                    logger.info(
+                        f"Updated call {call_id} with audio analysis fields: {updated_fields}"
+                    )
+
                 # Create analysis record (using available fields)
                 analysis_record = Analysis(
                     call_id=call_id,
@@ -410,7 +438,9 @@ class DatabaseIntegration:
                         "call_id": call_id,
                         "analysis_id": analysis_record.id,
                         "duration": analysis_data.get("duration_seconds", 0),
-                        "format": analysis_data.get("format", "unknown")
+                        "format": analysis_data.get("format", "unknown"),
+                        "file_size_bytes": analysis_data.get("file_size_bytes", 0),
+                        "call_updates": updated_fields
                     }
                 )
                 

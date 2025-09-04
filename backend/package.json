@@ -16,7 +16,9 @@
     "logs": "tail -f logs/signalhub.log",
     "health": "curl -s http://localhost:8000/health",
     "install-deps": "pip install -r requirements.txt",
-    "update-deps": "pip install --upgrade -r requirements.txt"
+    "update-deps": "pip install --upgrade -r requirements.txt",
+    "db:reset": "python backend/scripts/reset_db.py",
+    "db:clear": "python backend/scripts/clear_db.py"
   },
   "keywords": ["api", "fastapi", "python", "signalhub"],
   "author": "SignalHub Team",
