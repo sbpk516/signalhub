@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { apiClient } from '@/services/api/client'
 import { deleteResult, clearAllResults } from '@/services/api/results'
+import { formatTranscript } from '@/utils/transcript'
 
 // STEP 2: Add basic API integration
 // We'll add API call to fetch results from backend
@@ -22,6 +23,8 @@ const Results: React.FC = () => {
   const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({})
   const [clearing, setClearing] = useState<boolean>(false)
   const [clearError, setClearError] = useState<string | null>(null)
+  const [formattingOn, setFormattingOn] = useState<boolean>(true)
+  const [sentencesPerParagraph, setSentencesPerParagraph] = useState<number>(3)
   
   console.log('[RESULTS] Component rendering - Step 2 with API integration')
   
@@ -380,9 +383,34 @@ const Results: React.FC = () => {
                           <div className="space-y-3">
                             <div>
                               <div className="text-xs text-gray-500 mb-1">Transcript</div>
-                              <div className="text-sm text-gray-800 whitespace-pre-wrap">
-                                {detailsCache[result.call_id]?.transcription?.transcription_text || 'No transcript available'}
+                              {/* Formatting controls */}
+                              <div className="flex items-center gap-3 mb-2 text-xs text-gray-600">
+                                <label className="inline-flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={formattingOn}
+                                    onChange={(e) => setFormattingOn(e.target.checked)}
+                                  />
+                                  Neat formatting
+                                </label>
+                                <label className="inline-flex items-center gap-2">
+                                  <span>Sentences/paragraph</span>
+                                  <select
+                                    className="border border-gray-300 rounded px-1 py-0.5 bg-white"
+                                    value={sentencesPerParagraph}
+                                    onChange={(e) => setSentencesPerParagraph(parseInt(e.target.value) || 3)}
+                                  >
+                                    <option value={2}>2</option>
+                                    <option value={3}>3</option>
+                                    <option value={4}>4</option>
+                                  </select>
+                                </label>
                               </div>
+                              <TranscriptBlock
+                                text={detailsCache[result.call_id]?.transcription?.transcription_text || ''}
+                                enabled={formattingOn}
+                                sentencesPerParagraph={sentencesPerParagraph}
+                              />
                             </div>
                             {detailsCache[result.call_id]?.nlp_analysis && (
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -431,3 +459,31 @@ const Results: React.FC = () => {
 }
 
 export default Results
+
+// Local component for rendering formatted transcript
+const TranscriptBlock: React.FC<{ text: string; enabled: boolean; sentencesPerParagraph: number }> = ({ text, enabled, sentencesPerParagraph }) => {
+  if (!text || !text.trim()) {
+    return <div className="text-sm text-gray-600">No transcript available</div>
+  }
+
+  if (!enabled) {
+    return (
+      <div className="text-sm text-gray-800 whitespace-pre-wrap">
+        {text}
+      </div>
+    )
+  }
+
+  // For very long transcripts, simple guard (render anyway but keep efficient)
+  const paragraphs = formatTranscript(text, { sentencesPerParagraph, preserveExistingNewlines: true })
+
+  return (
+    <div className="space-y-3">
+      {paragraphs.map((p, idx) => (
+        <p key={idx} className="text-sm text-gray-800 leading-6">
+          {p}
+        </p>
+      ))}
+    </div>
+  )
+}
