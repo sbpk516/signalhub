@@ -1,15 +1,17 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { Card } from '../components/Shared'
-import { API_ENDPOINTS, ERROR_MESSAGES, SUCCESS_MESSAGES, API_BASE_URL } from '../types/constants'
+import { API_ENDPOINTS, API_BASE_URL, UI_CONFIG } from '../types/constants'
+import { apiClient } from '@/services/api/client'
 
 interface UploadFile {
   id: string
   name: string
   size: number
   type: string
-  status: 'pending' | 'uploading' | 'completed' | 'error'
+  status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error'
   progress: number
   error?: string
+  file?: File
 }
 
 interface UploadProps {
@@ -20,6 +22,19 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
   const [files, setFiles] = useState<UploadFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [processingTick, setProcessingTick] = useState(0)
+
+  // Cycle processing label while any file is in 'processing'
+  useEffect(() => {
+    const anyProcessing = files.some(f => f.status === 'processing')
+    if (!anyProcessing) return
+    const id = window.setInterval(() => {
+      setProcessingTick(t => (t + 1) % processingStages.length)
+    }, 3000)
+    return () => window.clearInterval(id)
+  }, [files])
+
+  const processingLabel = processingStages[processingTick]
 
   // Handle file selection
   const handleFileSelect = useCallback((selectedFiles: FileList | null) => {
@@ -31,7 +46,8 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
       size: file.size,
       type: file.type,
       status: 'pending',
-      progress: 0
+      progress: 0,
+      file
     }))
 
     setFiles(prev => [...prev, ...newFiles])
@@ -75,18 +91,8 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
 
       // Create FormData for file upload
       const formData = new FormData()
-      
-      // Get the file from the input element
-      const fileInput = document.getElementById('file-input') as HTMLInputElement
-      if (!fileInput || !fileInput.files) {
-        throw new Error('No file input found')
-      }
-      
-      const actualFile = Array.from(fileInput.files).find(f => f.name === file.name)
-      if (!actualFile) {
-        throw new Error('File not found in input')
-      }
-      
+      const actualFile = file.file
+      if (!actualFile) throw new Error('File content not available')
       formData.append('file', actualFile)
       
       console.log(`[UPLOAD] Sending file to: ${API_ENDPOINTS.UPLOAD}`)
@@ -99,29 +105,28 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
       // Make API call to backend using full URL
       const fullUrl = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD}`
       console.log(`[UPLOAD] Full URL: ${fullUrl}`)
-      
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        body: formData,
-      })
 
-      // Update progress to show upload is complete
-      setFiles(prev => prev.map(f => 
-        f.id === file.id 
-          ? { ...f, progress: 100 }
-          : f
-      ))
+      let uploadFinished = false
+      const response = await apiClient.post(fullUrl, formData, {
+        timeout: UI_CONFIG.UPLOAD_TIMEOUT,
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (evt: any) => {
+          const total = evt.total || actualFile.size || 0
+          const loaded = evt.loaded || 0
+          const pct = total ? Math.min(100, Math.round((loaded / total) * 100)) : loaded ? 100 : 0
+          setFiles(prev => prev.map(f => f.id === file.id ? { ...f, progress: pct } : f))
+          if (pct >= 100 && !uploadFinished) {
+            uploadFinished = true
+            // Show processing state while awaiting server-side pipeline
+            setFiles(prev => prev.map(f => f.id === file.id ? { ...f, status: 'processing' } : f))
+          }
+        }
+      })
   
       console.log(`[UPLOAD] Response status: ${response.status}`)
-      console.log(`[UPLOAD] Response headers:`, Object.fromEntries(response.headers.entries()))
+      console.log(`[UPLOAD] Response headers:`, response.headers)
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[UPLOAD] Upload failed with status ${response.status}:`, errorText)
-        throw new Error(`Upload failed: ${response.status} ${errorText}`)
-      }
-
-      const result = await response.json()
+      const result = response.data
       console.log(`[UPLOAD] Upload successful:`, result)
 
       // Update file status to completed
@@ -139,7 +144,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
       // }
 
       // Show success message instead
-      alert(`✅ File "${file.name}" uploaded successfully!`)
+      // Optional: inline success message or toast could be added here
 
     } catch (error) {
       console.error(`[UPLOAD] Error uploading ${file.name}:`, error)
@@ -149,7 +154,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
           ? { 
               ...f, 
               status: 'error', 
-              error: error instanceof Error ? error.message : 'Upload failed'
+              error: (error as any)?.message || 'Upload failed'
             }
           : f
       ))
@@ -259,11 +264,12 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
                     className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
                   >
                     <div className="flex items-center space-x-4 flex-1">
-                      <div className="text-2xl">
-                        {file.status === 'completed' ? '✅' : 
-                         file.status === 'uploading' ? '🔄' : 
-                         file.status === 'error' ? '❌' : '📁'}
-                      </div>
+                        <div className="text-2xl">
+                          {file.status === 'completed' ? '✅' : 
+                           file.status === 'uploading' ? '🔼' : 
+                           file.status === 'processing' ? '🔄' :
+                           file.status === 'error' ? '❌' : '📁'}
+                        </div>
                       
                       <div className="flex-1">
                         <div className="flex items-center space-x-2">
@@ -293,21 +299,31 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
                           </div>
                         </div>
                       )}
+                      {file.status === 'processing' && (
+                        <div className="w-48">
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
+                            <span>{processingLabel}</span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Status Badge */}
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         file.status === 'completed' ? 'bg-green-100 text-green-800' :
                         file.status === 'uploading' ? 'bg-blue-100 text-blue-800' :
+                        file.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
                         file.status === 'error' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {file.status === 'completed' ? '✅ Completed' : 
-                         file.status === 'uploading' ? '🔄 Uploading' : 
+                         file.status === 'uploading' ? `🔼 Uploading ${file.progress}%` : 
+                         file.status === 'processing' ? `🔄 ${processingLabel}` : 
                          file.status === 'error' ? '❌ Error' : '⏳ Pending'}
                       </span>
 
                       {/* Remove Button */}
-                      {file.status !== 'uploading' && (
+                      {file.status !== 'uploading' && file.status !== 'processing' && (
                         <button
                           onClick={() => removeFile(file.id)}
                           className="text-red-600 hover:text-red-800"
@@ -357,5 +373,10 @@ const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
+
+// Cycling processing label
+const processingStages = ['Processing audio…', 'Transcribing speech…', 'Running NLP analysis…']
+
+// Hook-like logic in component scope will compute label
 
 export default Upload

@@ -44,7 +44,7 @@ export const UI_CONFIG = {
   METRICS_REFRESH_INTERVAL: 5000, // 5 seconds
   
   // Timeouts
-  UPLOAD_TIMEOUT: 300000, // 5 minutes
+  UPLOAD_TIMEOUT: 600000, // 10 minutes
   PROCESSING_TIMEOUT: 600000, // 10 minutes
   
   // Animation durations
