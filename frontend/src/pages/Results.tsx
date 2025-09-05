@@ -25,6 +25,7 @@ const Results: React.FC = () => {
   const [clearError, setClearError] = useState<string | null>(null)
   const [formattingOn, setFormattingOn] = useState<boolean>(true)
   const [sentencesPerParagraph, setSentencesPerParagraph] = useState<number>(3)
+  const [copied, setCopied] = useState<boolean>(false)
   
   console.log('[RESULTS] Component rendering - Step 2 with API integration')
   
@@ -406,7 +407,7 @@ const Results: React.FC = () => {
                                   </select>
                                 </label>
                                 {/* Copy and Download actions */}
-                                <div className="ml-auto flex items-center gap-2">
+                                <div className="ml-auto flex items-center gap-2 relative">
                                   <button
                                     type="button"
                                     aria-label="Copy transcript"
@@ -431,6 +432,8 @@ const Results: React.FC = () => {
                                           document.execCommand('copy')
                                           document.body.removeChild(ta)
                                         }
+                                        setCopied(true)
+                                        window.setTimeout(() => setCopied(false), 1500)
                                       } catch (e) {
                                         console.warn('Copy failed', e)
                                       }
@@ -469,6 +472,11 @@ const Results: React.FC = () => {
                                   >
                                     <span className="text-base">⬇️</span>
                                   </button>
+                                  {copied && (
+                                    <div className="absolute -bottom-7 right-0 px-2 py-1 rounded bg-green-100 text-green-700 text-xs shadow">
+                                      Copied!
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               <TranscriptBlock
