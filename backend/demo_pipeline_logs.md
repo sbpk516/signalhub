@@ -145,3 +145,4 @@ Example: `pipeline_abc123-def456_20250903_212553.json`
 4. **Identify any issues** or bottlenecks
 
 The logging system will show you exactly what's working and what's not, making it much easier to debug the duration calculation issue!
+

@@ -639,6 +639,142 @@ async def get_pipeline_result_detail(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve result details: {str(e)}")
 
 
+@app.delete("/api/v1/pipeline/results/{call_id}")
+async def delete_pipeline_result(call_id: str, db: Session = Depends(get_db)):
+    """
+    Delete a single pipeline result by call_id.
+
+    - Removes related Transcript and Analysis rows
+    - Removes Call row
+    - Deletes associated audio files from disk (original and processed)
+    """
+    try:
+        logger.info(f"[RESULTS API] Delete request received for call_id: {call_id}")
+
+        call = db.query(Call).filter(Call.call_id == call_id).first()
+        if not call:
+            raise HTTPException(status_code=404, detail="Call not found")
+
+        # Track files to delete
+        files_deleted = []
+        files_errors = []
+
+        # Delete original file if exists
+        try:
+            if call.file_path and os.path.exists(call.file_path):
+                os.remove(call.file_path)
+                files_deleted.append(call.file_path)
+        except Exception as fe:
+            files_errors.append({"file": call.file_path, "error": str(fe)})
+
+        # Delete processed files matching call_id stem
+        try:
+            from pathlib import Path
+            processed_dir = Path(settings.upload_dir) / "processed"
+            stem = Path(call.file_path).stem if call.file_path else call_id
+            if processed_dir.exists():
+                for p in processed_dir.glob(f"{stem}*"):
+                    try:
+                        os.remove(p)
+                        files_deleted.append(str(p))
+                    except Exception as pe:
+                        files_errors.append({"file": str(p), "error": str(pe)})
+        except Exception as pe:
+            files_errors.append({"file": "processed_glob", "error": str(pe)})
+
+        # Delete related DB rows (child tables first)
+        try:
+            db.query(Transcript).filter(Transcript.call_id == call_id).delete()
+            db.query(Analysis).filter(Analysis.call_id == call_id).delete()
+            db.query(Call).filter(Call.call_id == call_id).delete()
+            db.commit()
+        except Exception as de:
+            db.rollback()
+            logger.error(f"[RESULTS API] DB deletion failed for {call_id}: {de}")
+            raise HTTPException(status_code=500, detail="Failed to delete database records")
+
+        logger.info(f"[RESULTS API] Deleted call {call_id}. Files removed: {len(files_deleted)}")
+        return {
+            "message": "Result deleted",
+            "data": {
+                "call_id": call_id,
+                "files_deleted": files_deleted,
+                "file_errors": files_errors
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[RESULTS API] Critical error in delete_pipeline_result: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete result: {str(e)}")
+
+
+@app.delete("/api/v1/pipeline/results")
+async def clear_all_results(db: Session = Depends(get_db)):
+    """
+    Clear all pipeline results from the database and remove uploaded/processed files.
+
+    This will:
+    - TRUNCATE or delete rows from analyses, transcripts, and calls
+    - Remove files under `upload_dir` (and its `processed` subdir)
+    """
+    try:
+        logger.warning("[RESULTS API] CLEAR ALL request received — deleting all results and files")
+
+        # 1) Remove files under upload directory
+        file_delete_count = 0
+        file_errors = []
+        try:
+            from pathlib import Path
+            base = Path(settings.upload_dir)
+            if base.exists():
+                for path in sorted(base.rglob("*"), key=lambda p: len(str(p)), reverse=True):
+                    # Delete files first, then empty dirs
+                    try:
+                        if path.is_file():
+                            os.remove(path)
+                            file_delete_count += 1
+                        elif path.is_dir():
+                            # Only remove empty directories
+                            try:
+                                path.rmdir()
+                            except OSError:
+                                # Directory not empty; continue
+                                pass
+                    except Exception as fe:
+                        file_errors.append({"path": str(path), "error": str(fe)})
+        except Exception as e:
+            logger.error(f"[RESULTS API] Error clearing files: {e}")
+            file_errors.append({"path": str(settings.upload_dir), "error": str(e)})
+
+        # 2) Delete database rows (children first)
+        try:
+            db.query(Analysis).delete()
+            db.query(Transcript).delete()
+            db.query(Call).delete()
+            db.commit()
+        except Exception as de:
+            db.rollback()
+            logger.error(f"[RESULTS API] DB clear failed: {de}")
+            raise HTTPException(status_code=500, detail="Failed to clear database")
+
+        return {
+            "message": "All results cleared",
+            "data": {
+                "files_deleted": file_delete_count,
+                "file_errors": file_errors
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[RESULTS API] Critical error in clear_all_results: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to clear results: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

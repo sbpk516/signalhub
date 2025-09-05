@@ -252,7 +252,7 @@ python -c "import app"  # backend
 
 ---
 
-## 🔄 **CONTINUOUS IMPROVEMENT**
+cd ## 🔄 **CONTINUOUS IMPROVEMENT**
 
 ### **Always Ask:**
 - **Can this be automated?**

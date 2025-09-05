@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import { 
+import type { 
   PipelineResult, 
   PipelineStatus, 
   ApiResponse 
@@ -183,6 +183,34 @@ export const exportResults = async (filters: ResultsFilters = {}, format: 'csv' 
     return response.data
   } catch (error) {
     console.error('[RESULTS API] Error exporting results:', error)
+    throw error
+  }
+}
+
+/**
+ * Delete a single result by call ID
+ */
+export const deleteResult = async (callId: string): Promise<ApiResponse> => {
+  try {
+    console.log('[RESULTS API] Deleting result for call ID:', callId)
+    const response = await apiClient.delete(`/api/v1/pipeline/results/${callId}`)
+    return response.data
+  } catch (error) {
+    console.error('[RESULTS API] Error deleting result:', error)
+    throw error
+  }
+}
+
+/**
+ * Clear all results from DB and remove uploaded files
+ */
+export const clearAllResults = async (): Promise<ApiResponse> => {
+  try {
+    console.log('[RESULTS API] Clearing all results')
+    const response = await apiClient.delete('/api/v1/pipeline/results')
+    return response.data
+  } catch (error) {
+    console.error('[RESULTS API] Error clearing results:', error)
     throw error
   }
 }

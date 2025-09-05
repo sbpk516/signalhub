@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { apiClient } from '@/services/api/client'
+import { deleteResult, clearAllResults } from '@/services/api/results'
 
 // STEP 2: Add basic API integration
 // We'll add API call to fetch results from backend
@@ -17,6 +18,10 @@ const Results: React.FC = () => {
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null)
   const [reanalyzeErrors, setReanalyzeErrors] = useState<Record<string, string>>({})
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({})
+  const [clearing, setClearing] = useState<boolean>(false)
+  const [clearError, setClearError] = useState<string | null>(null)
   
   console.log('[RESULTS] Component rendering - Step 2 with API integration')
   
@@ -121,7 +126,44 @@ const Results: React.FC = () => {
             >
               {loading ? '🔄' : '🔄'} Refresh Results
             </button>
-            
+            <button
+              onClick={async () => {
+                if (!confirm('This will delete ALL results from the database and remove uploaded files. Continue?')) return
+                try {
+                  setClearing(true)
+                  setClearError(null)
+                  await clearAllResults()
+                  // Reset local state
+                  setResults([])
+                  setExpandedId(null)
+                  setDetailsCache({})
+                  setDetailErrors({})
+                  setReanalyzeErrors({})
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : 'Failed to clear results'
+                  setClearError(msg)
+                } finally {
+                  setClearing(false)
+                }
+              }}
+              disabled={loading || clearing}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {clearing ? 'Deleting…' : '🗑️ Clear DB'}
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  localStorage.clear()
+                  console.log('[RESULTS] Local storage cleared')
+                } catch (e) {
+                  console.warn('[RESULTS] Failed to clear localStorage', e)
+                }
+              }}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+            >
+              🧹 Clear Local
+            </button>
           </div>
         </div>
       </div>
@@ -144,6 +186,19 @@ const Results: React.FC = () => {
             <div className="ml-3">
               <h3 className="text-sm font-medium text-red-800">API Error</h3>
               <div className="mt-2 text-sm text-red-700">{error}</div>
+            </div>
+          </div>
+        </div>
+      )}
+      {clearError && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <span className="text-yellow-500 text-xl">⚠️</span>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">Clear Error</h3>
+              <div className="mt-2 text-sm text-yellow-700">{clearError}</div>
             </div>
           </div>
         </div>
@@ -251,6 +306,36 @@ const Results: React.FC = () => {
                           >
                             {expandedId === result.call_id ? 'Hide details' : 'View details'}
                           </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Delete this result permanently?')) return
+                              try {
+                                setDeletingId(result.call_id)
+                                setDeleteErrors(prev => ({ ...prev, [result.call_id]: '' }))
+                                await deleteResult(result.call_id)
+                                // Remove from list and caches
+                                setResults(prev => prev.filter(r => r.call_id !== result.call_id))
+                                setExpandedId(prev => (prev === result.call_id ? null : prev))
+                                setDetailsCache(prev => {
+                                  const copy = { ...prev }
+                                  delete copy[result.call_id]
+                                  return copy
+                                })
+                              } catch (err) {
+                                const msg = err instanceof Error ? err.message : 'Failed to delete result'
+                                setDeleteErrors(prev => ({ ...prev, [result.call_id]: msg }))
+                              } finally {
+                                setDeletingId(null)
+                              }
+                            }}
+                            disabled={deletingId === result.call_id}
+                            className={`ml-3 inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium ${deletingId === result.call_id ? 'bg-gray-300 text-gray-700' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                          >
+                            {deletingId === result.call_id ? 'Deleting…' : 'Delete'}
+                          </button>
+                          {deleteErrors[result.call_id] && (
+                            <div className="text-xs text-red-600 mt-1">{deleteErrors[result.call_id]}</div>
+                          )}
                         </div>
                       </div>
                     </div>
