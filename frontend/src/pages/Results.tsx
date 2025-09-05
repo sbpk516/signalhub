@@ -405,6 +405,71 @@ const Results: React.FC = () => {
                                     <option value={4}>4</option>
                                   </select>
                                 </label>
+                                {/* Copy and Download actions */}
+                                <div className="ml-auto flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    aria-label="Copy transcript"
+                                    title="Copy transcript"
+                                    className="p-1.5 rounded border border-gray-300 hover:bg-gray-100"
+                                    onClick={async () => {
+                                      try {
+                                        const raw = detailsCache[result.call_id]?.transcription?.transcription_text || ''
+                                        const text = formattingOn
+                                          ? (formatTranscript(raw, { sentencesPerParagraph, preserveExistingNewlines: true }) || []).join('\n\n')
+                                          : raw
+                                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                                          await navigator.clipboard.writeText(text)
+                                        } else {
+                                          const ta = document.createElement('textarea')
+                                          ta.value = text
+                                          ta.style.position = 'fixed'
+                                          ta.style.left = '-9999px'
+                                          document.body.appendChild(ta)
+                                          ta.focus()
+                                          ta.select()
+                                          document.execCommand('copy')
+                                          document.body.removeChild(ta)
+                                        }
+                                      } catch (e) {
+                                        console.warn('Copy failed', e)
+                                      }
+                                    }}
+                                  >
+                                    <span className="text-base">📋</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label="Download transcript (.txt)"
+                                    title="Download transcript (.txt)"
+                                    className="p-1.5 rounded border border-gray-300 hover:bg-gray-100"
+                                    onClick={() => {
+                                      try {
+                                        const raw = detailsCache[result.call_id]?.transcription?.transcription_text || ''
+                                        const text = formattingOn
+                                          ? (formatTranscript(raw, { sentencesPerParagraph, preserveExistingNewlines: true }) || []).join('\n\n')
+                                          : raw
+                                        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+                                        const url = URL.createObjectURL(blob)
+                                        const a = document.createElement('a')
+                                        // Filename: prefer original filename without extension; fallback to call_id
+                                        const original = detailsCache[result.call_id]?.file_info?.original_filename
+                                        const fromPath = detailsCache[result.call_id]?.file_info?.file_path?.split?.('/')?.pop()
+                                        const base = (original || fromPath || result.call_id).replace(/\.[^.]+$/, '')
+                                        a.download = `${base}.txt`
+                                        a.href = url
+                                        document.body.appendChild(a)
+                                        a.click()
+                                        document.body.removeChild(a)
+                                        URL.revokeObjectURL(url)
+                                      } catch (e) {
+                                        console.warn('Download failed', e)
+                                      }
+                                    }}
+                                  >
+                                    <span className="text-base">⬇️</span>
+                                  </button>
+                                </div>
                               </div>
                               <TranscriptBlock
                                 text={detailsCache[result.call_id]?.transcription?.transcription_text || ''}
