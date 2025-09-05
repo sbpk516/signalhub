@@ -1,7 +1,127 @@
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Card } from '../components/Shared'
+import { fetchResults } from '@/services/api/results'
+
+type Stat = {
+  label: string
+  value: string
+  subtext?: string
+  icon: string
+  color: 'blue' | 'green' | 'yellow' | 'purple'
+}
+
+const formatDuration = (seconds: number) => {
+  if (!seconds || seconds <= 0) return '0s'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+const timeAgo = (iso?: string) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const diff = Math.max(0, Date.now() - d.getTime()) / 1000
+  const mins = Math.floor(diff / 60)
+  const hours = Math.floor(mins / 60)
+  const days = Math.floor(hours / 24)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  return `${days} day${days === 1 ? '' : 's'} ago`
+}
 
 const Dashboard: React.FC = () => {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [totalCalls, setTotalCalls] = useState<number>(0)
+  const [processedTotal, setProcessedTotal] = useState<number>(0)
+  const [pendingTotal, setPendingTotal] = useState<number>(0)
+  const [recent, setRecent] = useState<any[]>([])
+  const [durationSum, setDurationSum] = useState<number>(0)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Accurate totals using filtered queries for counts
+        const [allRes, completedRes, processingRes, uploadedRes, latestRes] = await Promise.all([
+          fetchResults({ limit: 1 }),
+          fetchResults({ status: 'completed', limit: 1 }),
+          fetchResults({ status: 'processing', limit: 1 }),
+          fetchResults({ status: 'uploaded', limit: 1 }),
+          fetchResults({ limit: 100, offset: 0 })
+        ])
+
+        setTotalCalls(allRes.data.total || 0)
+        setProcessedTotal(completedRes.data.total || 0)
+        setPendingTotal((processingRes.data.total || 0) + (uploadedRes.data.total || 0))
+
+        const items = (latestRes.data.results || [])
+          .slice()
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        setRecent(items.slice(0, 5))
+
+        const dur = items.reduce((acc, r) => {
+          const seconds = (r as any)?.audio_analysis?.duration_seconds
+          return acc + (typeof seconds === 'number' ? seconds : 0)
+        }, 0)
+        setDurationSum(dur)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to load dashboard data'
+        setError(msg)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  const stats: Stat[] = useMemo(() => ([
+    { label: 'Total Calls', value: String(totalCalls), subtext: undefined, icon: '📞', color: 'blue' },
+    { label: 'Processed Audio', value: String(processedTotal), subtext: undefined, icon: '✅', color: 'green' },
+    { label: 'Pending Analysis', value: String(pendingTotal), subtext: 'uploaded or processing', icon: '⏳', color: 'yellow' },
+    { label: 'Total Duration', value: formatDuration(durationSum), subtext: 'last 100 calls', icon: '⏱️', color: 'purple' },
+  ]), [totalCalls, processedTotal, pendingTotal, durationSum])
+
+  const colorClasses = (c: Stat['color']) => {
+    switch (c) {
+      case 'blue':
+        return {
+          card: 'from-blue-50 to-blue-100 border-blue-200',
+          label: 'text-blue-600',
+          value: 'text-blue-900',
+          icon: 'text-blue-400',
+        }
+      case 'green':
+        return {
+          card: 'from-green-50 to-green-100 border-green-200',
+          label: 'text-green-600',
+          value: 'text-green-900',
+          icon: 'text-green-400',
+        }
+      case 'yellow':
+        return {
+          card: 'from-yellow-50 to-yellow-100 border-yellow-200',
+          label: 'text-yellow-600',
+          value: 'text-yellow-900',
+          icon: 'text-yellow-400',
+        }
+      case 'purple':
+      default:
+        return {
+          card: 'from-purple-50 to-purple-100 border-purple-200',
+          label: 'text-purple-600',
+          value: 'text-purple-900',
+          icon: 'text-purple-400',
+        }
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       {/* Page Header */}
@@ -30,51 +150,24 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards (dynamic) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-blue-600 mb-1">Total Calls</p>
-              <p className="text-3xl font-bold text-blue-900">24</p>
-              <p className="text-sm text-blue-600 mt-1">+12% from last week</p>
+        {stats.map((s) => {
+          const cls = colorClasses(s.color)
+          return (
+          <Card key={s.label} className={`bg-gradient-to-br ${cls.card} hover:shadow-md transition-shadow`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`text-sm font-medium ${cls.label} mb-1`}>{s.label}</p>
+                <p className={`text-3xl font-bold ${cls.value}`}>{s.value}</p>
+                {s.subtext && (
+                  <p className={`text-sm ${cls.label} mt-1`}>{s.subtext}</p>
+                )}
+              </div>
+              <div className={`text-3xl ${cls.icon}`}>{s.icon}</div>
             </div>
-            <div className="text-3xl text-blue-400">📞</div>
-          </div>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-green-600 mb-1">Processed Audio</p>
-              <p className="text-3xl font-bold text-green-900">18</p>
-              <p className="text-sm text-green-600 mt-1">75% success rate</p>
-            </div>
-            <div className="text-3xl text-green-400">✅</div>
-          </div>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-yellow-600 mb-1">Pending Analysis</p>
-              <p className="text-3xl font-bold text-yellow-900">6</p>
-              <p className="text-sm text-yellow-600 mt-1">In queue</p>
-            </div>
-            <div className="text-3xl text-yellow-400">⏳</div>
-          </div>
-        </Card>
-        
-        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-purple-600 mb-1">Total Duration</p>
-              <p className="text-3xl font-bold text-purple-900">2.4h</p>
-              <p className="text-sm text-purple-600 mt-1">Average: 6min/call</p>
-            </div>
-            <div className="text-3xl text-purple-400">⏱️</div>
-          </div>
-        </Card>
+          </Card>
+        )})}
       </div>
 
       {/* Main Content Grid */}
@@ -82,59 +175,52 @@ const Dashboard: React.FC = () => {
         {/* Recent Activity */}
         <div className="lg:col-span-2">
           <Card title="Recent Activity" className="h-full">
-            <div className="space-y-4">
-              <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">✓</span>
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">Call #2025-001 processed successfully</p>
-                  <p className="text-sm text-gray-500">Transcription and analysis completed</p>
-                  <p className="text-xs text-gray-400 mt-1">2 minutes ago</p>
-                </div>
+            {loading && <div className="p-4 text-sm text-gray-600">Loading…</div>}
+            {error && (
+              <div className="p-4 text-sm text-red-600">{error}</div>
+            )}
+            {!loading && !error && (
+              <div className="space-y-4">
+                {recent.length === 0 && (
+                  <div className="p-4 text-sm text-gray-600">No recent activity</div>
+                )}
+                {recent.map((r) => {
+                  const status = r.status
+                  const color = status === 'completed' ? 'green' : status === 'processing' ? 'yellow' : status === 'failed' ? 'red' : 'blue'
+                  const icon = status === 'completed' ? '✓' : status === 'processing' ? '⚙️' : status === 'failed' ? '⚠️' : '📤'
+                  const title = status === 'completed' ? 'Processed successfully' : status === 'processing' ? 'Analysis in progress' : status === 'failed' ? 'Processing failed' : 'New upload'
+                  const fileName = (r as any)?.file_info?.original_filename
+                    || (r as any)?.file_info?.file_path?.split?.('/')?.pop()
+                    || r.call_id
+                  return (
+                    <div key={r.call_id} className={
+                      `flex items-start space-x-4 p-4 bg-gradient-to-r ${
+                        color === 'green' ? 'from-green-50 to-green-100 border-green-200' :
+                        color === 'yellow' ? 'from-yellow-50 to-yellow-100 border-yellow-200' :
+                        color === 'red' ? 'from-red-50 to-red-100 border-red-200' :
+                        'from-blue-50 to-blue-100 border-blue-200'
+                      } rounded-lg border`
+                    }>
+                      <div className="flex-shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          color === 'green' ? 'bg-green-500' :
+                          color === 'yellow' ? 'bg-yellow-500' :
+                          color === 'red' ? 'bg-red-500' :
+                          'bg-blue-500'
+                        }`}>
+                          <span className="text-white text-sm font-bold">{icon}</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{title}</p>
+                        <p className="text-sm text-gray-500">{fileName}</p>
+                        <p className="text-xs text-gray-400 mt-1">{timeAgo(r.created_at)}</p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-              
-              <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">📤</span>
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">New audio file uploaded</p>
-                  <p className="text-sm text-gray-500">customer_support_call_002.wav (8.5MB)</p>
-                  <p className="text-xs text-gray-400 mt-1">15 minutes ago</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-lg border border-yellow-200">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">⚙️</span>
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">Analysis in progress</p>
-                  <p className="text-sm text-gray-500">NLP processing for call #2025-003</p>
-                  <p className="text-xs text-gray-400 mt-1">1 hour ago</p>
-                </div>
-              </div>
-
-              <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-red-50 to-red-100 rounded-lg border border-red-200">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">⚠️</span>
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">High risk call detected</p>
-                  <p className="text-sm text-gray-500">Call #2025-004 shows escalation risk</p>
-                  <p className="text-xs text-gray-400 mt-1">2 hours ago</p>
-                </div>
-              </div>
-            </div>
+            )}
           </Card>
         </div>
 

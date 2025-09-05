@@ -63,6 +63,7 @@ export interface PipelineResult {
   file_info: {
     file_path: string;
     file_size: number;
+    original_filename?: string;
     file_type?: string;
   };
   audio_analysis: AudioAnalysis;
