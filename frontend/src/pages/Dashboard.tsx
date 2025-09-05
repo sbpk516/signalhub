@@ -33,7 +33,11 @@ const timeAgo = (iso?: string) => {
   return `${days} day${days === 1 ? '' : 's'} ago`
 }
 
-const Dashboard: React.FC = () => {
+type DashboardProps = {
+  onNavigate?: (page: 'dashboard' | 'upload' | 'results') => void
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [totalCalls, setTotalCalls] = useState<number>(0)
@@ -228,7 +232,10 @@ const Dashboard: React.FC = () => {
         <div>
           <Card title="Quick Actions" className="h-full">
             <div className="space-y-4">
-              <button className="w-full p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all duration-200 group">
+              <button
+                onClick={() => onNavigate?.('upload')}
+                className="w-full p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all duration-200 group"
+              >
                 <div className="text-center">
                   <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📤</div>
                   <div className="font-medium text-gray-900 group-hover:text-blue-700">Upload Audio</div>
@@ -236,7 +243,10 @@ const Dashboard: React.FC = () => {
                 </div>
               </button>
               
-              <button className="w-full p-4 border-2 border-dashed border-green-300 rounded-lg hover:border-green-400 hover:bg-green-50 transition-all duration-200 group">
+              <button
+                onClick={() => onNavigate?.('analytics')}
+                className="w-full p-4 border-2 border-dashed border-green-300 rounded-lg hover:border-green-400 hover:bg-green-50 transition-all duration-200 group"
+              >
                 <div className="text-center">
                   <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📊</div>
                   <div className="font-medium text-gray-900 group-hover:text-green-700">View Analytics</div>
@@ -244,7 +254,10 @@ const Dashboard: React.FC = () => {
                 </div>
               </button>
               
-              <button className="w-full p-4 border-2 border-dashed border-purple-300 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all duration-200 group">
+              <button
+                onClick={() => onNavigate?.('results')}
+                className="w-full p-4 border-2 border-dashed border-purple-300 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all duration-200 group"
+              >
                 <div className="text-center">
                   <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📋</div>
                   <div className="font-medium text-gray-900 group-hover:text-purple-700">View Results</div>
@@ -252,7 +265,10 @@ const Dashboard: React.FC = () => {
                 </div>
               </button>
 
-              <button className="w-full p-4 border-2 border-dashed border-orange-300 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-all duration-200 group">
+              <button
+                onClick={() => onNavigate?.('settings')}
+                className="w-full p-4 border-2 border-dashed border-orange-300 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-all duration-200 group"
+              >
                 <div className="text-center">
                   <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">⚙️</div>
                   <div className="font-medium text-gray-900 group-hover:text-orange-700">Settings</div>

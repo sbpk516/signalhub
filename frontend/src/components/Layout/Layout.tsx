@@ -1,12 +1,12 @@
 import React, { useState, useCallback } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
-import { Dashboard, Upload, Results } from '../../pages'
+import { Dashboard, Upload, Results, Analytics, Settings } from '../../pages'
 
 const Layout: React.FC = () => {
   console.log('[LAYOUT] Component rendering...')
   
-  const [activePage, setActivePage] = useState<'dashboard' | 'upload' | 'results'>('dashboard')
+  const [activePage, setActivePage] = useState<'dashboard' | 'upload' | 'results' | 'analytics' | 'settings'>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const handleUploadComplete = useCallback(() => {
@@ -17,11 +17,15 @@ const Layout: React.FC = () => {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard />
+        return <Dashboard onNavigate={setActivePage} />
       case 'upload':
         return <Upload onUploadComplete={handleUploadComplete} />
       case 'results':
         return <Results />
+      case 'analytics':
+        return <Analytics />
+      case 'settings':
+        return <Settings />
       default:
         return <Dashboard />
     }

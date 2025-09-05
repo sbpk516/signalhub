@@ -3,8 +3,8 @@ import React from 'react'
 interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
-  activePage: 'dashboard' | 'upload' | 'results'
-  onPageChange: (page: 'dashboard' | 'upload' | 'results') => void
+  activePage: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings'
+  onPageChange: (page: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings') => void
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, activePage, onPageChange }) => {
@@ -18,10 +18,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, activePage, onPageC
   ]
 
   const handleItemClick = (itemId: string) => {
-    if (['dashboard', 'upload', 'results'].includes(itemId)) {
-      onPageChange(itemId as 'dashboard' | 'upload' | 'results')
+    if (['dashboard', 'upload', 'results', 'analytics', 'settings'].includes(itemId)) {
+      onPageChange(itemId as any)
     }
-    // For other items, we could add future functionality
   }
 
   return (
@@ -57,8 +56,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, activePage, onPageC
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
             {menuItems.map((item) => {
-              const isActive = activePage === item.id
-              const isClickable = ['dashboard', 'upload', 'results'].includes(item.id)
+              const isActive = activePage === (item.id as any)
+              const isClickable = ['dashboard', 'upload', 'results', 'analytics', 'settings'].includes(item.id)
               
               return (
                 <div

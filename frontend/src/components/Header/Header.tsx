@@ -2,8 +2,8 @@ import React from 'react'
 import { Logo, Navigation } from './index'
 
 interface HeaderProps {
-  activePage: 'dashboard' | 'upload' | 'results'
-  onPageChange: (page: 'dashboard' | 'upload' | 'results') => void
+  activePage: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings'
+  onPageChange: (page: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings') => void
   onMenuToggle: () => void
 }
 

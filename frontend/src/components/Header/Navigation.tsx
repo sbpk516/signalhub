@@ -1,8 +1,8 @@
 import React from 'react'
 
 interface NavigationProps {
-  activePage: 'dashboard' | 'upload' | 'results'
-  onPageChange: (page: 'dashboard' | 'upload' | 'results') => void
+  activePage: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings'
+  onPageChange: (page: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings') => void
 }
 
 const Navigation: React.FC<NavigationProps> = ({ activePage, onPageChange }) => {
@@ -20,7 +20,7 @@ const Navigation: React.FC<NavigationProps> = ({ activePage, onPageChange }) => 
         return (
           <button
             key={item.id}
-            onClick={() => onPageChange(item.id as 'dashboard' | 'upload' | 'results')}
+            onClick={() => onPageChange(item.id as any)}
             className={`
               flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200
               ${isActive
