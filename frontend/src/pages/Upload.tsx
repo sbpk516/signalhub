@@ -109,11 +109,13 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
       let uploadFinished = false
       const response = await apiClient.post(fullUrl, formData, {
         timeout: UI_CONFIG.UPLOAD_TIMEOUT,
-        headers: { 'Content-Type': 'multipart/form-data' },
+        // Do NOT set 'Content-Type' for FormData; the browser will add the correct boundary
         onUploadProgress: (evt: any) => {
           const total = evt.total || actualFile.size || 0
           const loaded = evt.loaded || 0
           const pct = total ? Math.min(100, Math.round((loaded / total) * 100)) : loaded ? 100 : 0
+          // Debug log to verify progress events
+          if (pct % 10 === 0) console.log(`[UPLOAD] Progress ${pct}% (${loaded}/${total})`)
           setFiles(prev => prev.map(f => f.id === file.id ? { ...f, progress: pct } : f))
           if (pct >= 100 && !uploadFinished) {
             uploadFinished = true

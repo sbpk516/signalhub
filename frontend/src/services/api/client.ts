@@ -74,7 +74,7 @@ export const createApiClient = (): AxiosInstance => {
     baseURL: API_BASE_URL,
     timeout: API_TIMEOUT,
     headers: {
-      'Content-Type': 'application/json',
+      // Do not set Content-Type globally; let axios/browser infer it.
       'Accept': 'application/json',
     },
     // Enable request/response logging in development
@@ -88,6 +88,19 @@ export const createApiClient = (): AxiosInstance => {
   // Add request interceptor for logging
   apiClient.interceptors.request.use(
     (config: AxiosRequestConfig) => {
+      // Ensure correct headers for FormData uploads
+      const isFormData = typeof FormData !== 'undefined' && config.data instanceof FormData
+      if (isFormData) {
+        if (config.headers) {
+          // Remove any preset Content-Type so the browser can set the multipart boundary
+          // @ts-ignore
+          delete (config.headers as any)['Content-Type']
+          // Some axios versions nest common headers
+          // @ts-ignore
+          delete (config.headers as any)?.common?.['Content-Type']
+        }
+      }
+
       const requestId = Math.random().toString(36).substring(7);
       const startTime = Date.now();
 
@@ -96,7 +109,7 @@ export const createApiClient = (): AxiosInstance => {
         method: config.method?.toUpperCase(),
         url: config.url,
         baseURL: config.baseURL,
-        fullURL: `${config.baseURL}${config.url}`,
+        fullURL: config.url?.startsWith('http') ? config.url : `${config.baseURL}${config.url}`,
         headers: config.headers,
         data: config.data,
         params: config.params,
