@@ -71,7 +71,7 @@ export const createApiClient = (): AxiosInstance => {
 
   // Create axios instance with base configuration
   const apiClient: AxiosInstance = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: '', // Use relative URLs to work with Vite proxy
     timeout: API_TIMEOUT,
     headers: {
       // Do not set Content-Type globally; let axios/browser infer it.

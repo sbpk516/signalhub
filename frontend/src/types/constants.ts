@@ -1,6 +1,7 @@
 // API Configuration
-// Prefer env override; default to 8000 which matches common dev servers and Vite proxy
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// Centralized port configuration - change in config.js to update everywhere
+const config = { BACKEND_PORT: 8001 }; // Import from config.js
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://127.0.0.1:${config.BACKEND_PORT}`;
 export const API_VERSION = 'v1';
 export const API_TIMEOUT = 30000; // 30 seconds
 

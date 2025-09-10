@@ -136,7 +136,8 @@ A real-time call intelligence platform that ingests live or batch call audio and
 
 6. **Run the backend**
    ```bash
-   python -m uvicorn backend.app.main:app --reload --port 8000
+   # Port configured in config.js - change there to update everywhere
+   source venv/bin/activate && cd backend && python start.py
    ```
 
 ### **Frontend Installation**
@@ -158,17 +159,17 @@ A real-time call intelligence platform that ingests live or batch call audio and
 
 4. **Access the application**
    - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
+   - Backend API: http://localhost:8001
 
 ### **Verify Installation**
 
 1. **Check backend API health**
    ```bash
-   curl http://localhost:8000/health
+   curl http://localhost:8001/health
    ```
 
 2. **View API documentation**
-   - Open: http://localhost:8000/docs
+   - Open: http://localhost:8001/docs
 
 3. **Test frontend**
    - Open: http://localhost:3000
@@ -282,8 +283,8 @@ pytest backend/test_main.py --cov=backend
 
 2. **Port Already in Use**
    ```bash
-   # Check what's using port 8000
-   lsof -i :8000
+   # Check what's using port 8001
+   lsof -i :8001
    
    # Kill process
    kill -9 <PID>

@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Import port configuration
+const config = require('../config.js')
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -11,10 +14,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: config.FRONTEND_PORT,
     proxy: {
       '/api': {
-        target: 'http://localhost:8002',
+        target: `http://127.0.0.1:${config.BACKEND_PORT}`,
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {

@@ -102,12 +102,12 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
         type: actualFile.type
       })
 
-      // Make API call to backend using full URL
-      const fullUrl = `${API_BASE_URL}${API_ENDPOINTS.UPLOAD}`
-      console.log(`[UPLOAD] Full URL: ${fullUrl}`)
+      // Make API call to backend using relative URL (will use Vite proxy)
+      const uploadUrl = API_ENDPOINTS.UPLOAD
+      console.log(`[UPLOAD] Upload URL: ${uploadUrl}`)
 
       let uploadFinished = false
-      const response = await apiClient.post(fullUrl, formData, {
+      const response = await apiClient.post(uploadUrl, formData, {
         timeout: UI_CONFIG.UPLOAD_TIMEOUT,
         // Do NOT set 'Content-Type' for FormData; the browser will add the correct boundary
         onUploadProgress: (evt: any) => {
