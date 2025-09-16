@@ -173,7 +173,30 @@ A real-time call intelligence platform that ingests live or batch call audio and
 
 3. **Test frontend**
    - Open: http://localhost:3000
-   - Navigate between Dashboard, Upload, and Results pages
+  - Navigate between Dashboard, Upload, and Results pages
+
+## 🖥️ **Desktop Development (Electron) — Debug First**
+
+We are adding desktop apps (macOS + Windows) using Electron with a debug‑first, minimal approach. See detailed phases in `docs/desktop-plan.md`.
+
+Quick dev run (unsigned, local):
+- Backend (terminal A):
+  - `bash scripts/clear-ports.sh`
+  - `bash scripts/start-backend.sh` (or `source venv/bin/activate && python backend/start.py`)
+- Desktop shell + Frontend (terminal B):
+  - `cd desktop && npm install`
+  - `npm run dev`
+
+What to expect:
+- Electron launches and loads `http://localhost:3000` (Vite dev server).
+- Results page works against backend on `http://127.0.0.1:8001`.
+- Toggle “Created” column header to switch newest/oldest; watch console logs for order checks.
+- In DevTools Console, `window.api.ping()` returns `"pong"`.
+
+Notes:
+- Do not run `scripts/start-all.sh` together with `desktop npm run dev` (both start the frontend dev server). Use backend‑only start.
+- Packaging for production (DMG/NSIS) comes later; API base URL switching for packaged apps will be added in Phase 1 wrap‑up.
+
 
 ## 📁 **Project Structure**
 

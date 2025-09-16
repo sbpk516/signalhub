@@ -1,0 +1,24 @@
+appId: com.signalhub.app
+productName: SignalHub
+directories:
+  output: dist
+files:
+  - from: .
+    filter:
+      - package.json
+      - src/**
+extraResources:
+  # Include the built frontend (relative to desktop/ when running builder)
+  - from: ../frontend/dist
+    to: frontend_dist
+mac:
+  target: [dmg]
+  category: public.app-category.productivity
+win:
+  target: [nsis]
+publish:
+  provider: github
+  owner: sbpk516
+  repo: signalhub
+  releaseType: draft
+

@@ -64,14 +64,22 @@ const logger = ApiLogger.getInstance();
  * - Request/response interceptors for logging
  */
 export const createApiClient = (): AxiosInstance => {
+  // Decide baseURL in a debug-first way:
+  // - Dev (Vite, http://localhost:3000): keep relative URLs ('') so Vite proxy works
+  // - Packaged Electron (file://): use absolute API_BASE_URL (e.g., http://127.0.0.1:8001)
+  const isFileProtocol = typeof window !== 'undefined' && window.location?.protocol === 'file:'
+  const chosenBaseURL = isFileProtocol ? API_BASE_URL : ''
+
   logger.log('Creating API client with configuration:', {
-    baseURL: API_BASE_URL,
+    chosenBaseURL,
+    isFileProtocol,
+    API_BASE_URL,
     timeout: API_TIMEOUT
   });
 
   // Create axios instance with base configuration
   const apiClient: AxiosInstance = axios.create({
-    baseURL: '', // Use relative URLs to work with Vite proxy
+    baseURL: chosenBaseURL,
     timeout: API_TIMEOUT,
     headers: {
       // Do not set Content-Type globally; let axios/browser infer it.
