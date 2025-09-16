@@ -440,6 +440,8 @@ async def get_pipeline_results(
     date_from: str = None,
     date_to: str = None,
     search: str = None,
+    sort: str = "created_at",
+    direction: str = "desc",
     limit: int = 20,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -450,39 +452,76 @@ async def get_pipeline_results(
     This is a DEBUG-FIRST implementation with extensive logging.
     """
     try:
-        logger.info(f"[RESULTS API] Request received - status: {status}, date_from: {date_from}, date_to: {date_to}, search: {search}, limit: {limit}, offset: {offset}")
+        logger.info(
+            f"[RESULTS API] Request received - status: {status}, date_from: {date_from}, date_to: {date_to}, "
+            f"search: {search}, sort: {sort}, direction: {direction}, limit: {limit}, offset: {offset}"
+        )
         
-        # Start building query
-        query = db.query(Call)
+        # Start building base query
+        base_query = db.query(Call)
         
         # Apply filters with logging
         if status:
             logger.info(f"[RESULTS API] Applying status filter: {status}")
-            query = query.filter(Call.status == status)
+            base_query = base_query.filter(Call.status == status)
         
         if date_from:
             logger.info(f"[RESULTS API] Applying date_from filter: {date_from}")
             # Convert string to datetime for comparison
             from_date = datetime.fromisoformat(date_from)
-            query = query.filter(Call.created_at >= from_date)
+            base_query = base_query.filter(Call.created_at >= from_date)
         
         if date_to:
             logger.info(f"[RESULTS API] Applying date_to filter: {date_to}")
             # Convert string to datetime for comparison
             to_date = datetime.fromisoformat(date_to)
-            query = query.filter(Call.created_at <= to_date)
+            base_query = base_query.filter(Call.created_at <= to_date)
         
         # Get total count before pagination
-        total_count = query.count()
+        total_count = base_query.count()
         logger.info(f"[RESULTS API] Total records found: {total_count}")
         
+        # Determine ordering (default: created_at DESC with nulls last)
+        order_col = None
+        sort_normalized = (sort or "created_at").lower()
+        direction_normalized = (direction or "desc").lower()
+
+        if sort_normalized == "created_at":
+            order_col = Call.created_at
+        else:
+            logger.warning(f"[RESULTS API] Unsupported sort field '{sort}'. Falling back to 'created_at'.")
+            order_col = Call.created_at
+
+        if direction_normalized not in ("asc", "desc"):
+            logger.warning(f"[RESULTS API] Unsupported direction '{direction}'. Falling back to 'desc'.")
+            direction_normalized = "desc"
+
+        # Build ordered query with stable tiebreaker and nulls last
+        primary_order = (order_col.asc() if direction_normalized == "asc" else order_col.desc()).nullslast()
+        tie_breaker = Call.id.asc() if direction_normalized == "asc" else Call.id.desc()
+
+        logger.info(
+            f"[RESULTS API] Applying ordering - sort: {sort_normalized} {direction_normalized} (nulls last), tiebreaker on id"
+        )
+
+        ordered_query = base_query.order_by(primary_order, tie_breaker)
+
         # Apply pagination
-        query = query.offset(offset).limit(limit)
+        paged_query = ordered_query.offset(offset).limit(limit)
         logger.info(f"[RESULTS API] Applied pagination - offset: {offset}, limit: {limit}")
         
         # Execute query
-        calls = query.all()
+        calls = paged_query.all()
         logger.info(f"[RESULTS API] Retrieved {len(calls)} calls from database")
+        if calls:
+            try:
+                first_created = calls[0].created_at.isoformat() if calls[0].created_at else None
+                last_created = calls[-1].created_at.isoformat() if calls[-1].created_at else None
+                logger.debug(
+                    f"[RESULTS API] Page sample created_at - first: {first_created}, last: {last_created}"
+                )
+            except Exception as log_err:
+                logger.debug(f"[RESULTS API] Unable to log page sample created_at: {log_err}")
         
         # Convert to response format
         results = []

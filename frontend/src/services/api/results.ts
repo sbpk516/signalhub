@@ -15,6 +15,8 @@ export interface ResultsFilters {
   dateFrom?: string
   dateTo?: string
   searchQuery?: string
+  sort?: 'created_at'
+  direction?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }
@@ -45,6 +47,8 @@ export const fetchResults = async (filters: ResultsFilters = {}): Promise<Result
     if (filters.dateFrom) params.append('date_from', filters.dateFrom)
     if (filters.dateTo) params.append('date_to', filters.dateTo)
     if (filters.searchQuery) params.append('search', filters.searchQuery)
+    if (filters.sort) params.append('sort', filters.sort)
+    if (filters.direction) params.append('direction', filters.direction)
     if (filters.limit) params.append('limit', filters.limit.toString())
     if (filters.offset) params.append('offset', filters.offset.toString())
     

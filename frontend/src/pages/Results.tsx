@@ -26,6 +26,8 @@ const Results: React.FC = () => {
   const [formattingOn, setFormattingOn] = useState<boolean>(true)
   const [sentencesPerParagraph, setSentencesPerParagraph] = useState<number>(3)
   const [copied, setCopied] = useState<boolean>(false)
+  // Sort toggle (newest/oldest)
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   
   console.log('[RESULTS] Component rendering - Step 2 with API integration')
   
@@ -37,7 +39,12 @@ const Results: React.FC = () => {
       setError(null)
       
       // Call the backend API endpoint using shared API client (respects base URL)
-      const { data } = await apiClient.get('/api/v1/pipeline/results')
+      const params = new URLSearchParams()
+      params.append('sort', 'created_at')
+      params.append('direction', sortDirection)
+      const url = `/api/v1/pipeline/results?${params.toString()}`
+      console.log('[RESULTS] 🔎 Fetch URL:', url)
+      const { data } = await apiClient.get(url)
       console.log('[RESULTS] 📥 API Response received:', data)
       
       // Extract results from response
@@ -45,6 +52,11 @@ const Results: React.FC = () => {
       setResults(resultsData)
       console.log('[RESULTS] ✅ Results loaded:', resultsData.length, 'items')
       console.log('[RESULTS] 📊 Full response structure:', data)
+      if (resultsData.length > 0) {
+        const first = resultsData[0]?.created_at || null
+        const last = resultsData[resultsData.length - 1]?.created_at || null
+        console.log('[RESULTS] 🧭 Order check (created_at):', { direction: sortDirection, first, last })
+      }
       
     } catch (err) {
       console.error('[RESULTS] ❌ API call failed:', err)
@@ -95,11 +107,11 @@ const Results: React.FC = () => {
     }
   }
   
-  // STEP 2: Load results when component mounts
+  // STEP 2: Load results when component mounts and when sort changes
   useEffect(() => {
-    console.log('[RESULTS] 🔄 Component mounted, fetching results...')
+    console.log('[RESULTS] 🔄 Fetching results with sort direction:', sortDirection)
     fetchResults()
-  }, [])
+  }, [sortDirection])
   
   return (
     <div className="p-6">
@@ -227,6 +239,29 @@ const Results: React.FC = () => {
               <div className="px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-medium text-gray-900">Recent Calls</h3>
                 <p className="text-sm text-gray-500 mt-1">Showing {results.length} processed audio files</p>
+              </div>
+              {/* Column header row for alignment with list */}
+              <div className="px-6 py-2 bg-gray-50 border-t border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-medium text-gray-500">
+                  <div>Call</div>
+                  <div>File</div>
+                  <div className="text-right">
+                    <button
+                      type="button"
+                      aria-pressed={sortDirection === 'desc'}
+                      aria-label={`Sort by created time ${sortDirection === 'desc' ? 'descending (newest first)' : 'ascending (oldest first)'}`}
+                      onClick={() => {
+                        const next = sortDirection === 'desc' ? 'asc' : 'desc'
+                        console.log('[RESULTS] 🔁 Toggling sort direction:', { from: sortDirection, to: next })
+                        setSortDirection(next)
+                      }}
+                      className="inline-flex items-center space-x-1 text-gray-700 hover:text-gray-900"
+                    >
+                      <span>Created</span>
+                      <span aria-hidden="true">{sortDirection === 'desc' ? '▼' : '▲'}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="divide-y divide-gray-200">
                 {results.map((result, index) => (
