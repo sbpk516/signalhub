@@ -108,14 +108,14 @@ main() {
     
     log "Phase 2: Clearing specific ports..."
     
-    # Clear common SignalHub ports
-    kill_port_processes "8010" "backend port"
+    # Clear common SignalHub ports (respect VPN usage on 8000 — do NOT clear 8000)
+    kill_port_processes "8010" "legacy backend port"
+    kill_port_processes "8001" "backend port"
     kill_port_processes "3001" "frontend port"
     kill_port_processes "3000" "alternative frontend port"
-    kill_port_processes "8000" "alternative backend port"
     
-    # Clear any other common dev ports that might be used
-    for port in 3002 3003 3100 3101 3102 5174 5175 8011 8012 8013 8014 8015; do
+    # Clear any other common dev ports that might be used (include Vite default 5173)
+    for port in 3002 3003 3100 3101 3102 5173 5174 5175 8011 8012 8013 8014 8015; do
         kill_port_processes "$port" "dev port $port"
     done
     
@@ -131,9 +131,9 @@ main() {
         ps aux | grep -E "(uvicorn|npm.*dev|vite.*port|node.*dev|python.*app.main)" | grep -v grep || true
     fi
     
-    # Check specific ports
+    # Check specific ports (do NOT check 8000 as it's reserved for VPN)
     log "Checking common ports..."
-    for port in 8010 3001 3000 8000; do
+    for port in 8010 8001 3001 3000 5173; do
         if lsof -i :"$port" >/dev/null 2>&1; then
             warning "Port $port is still in use:"
             lsof -i :"$port" || true
