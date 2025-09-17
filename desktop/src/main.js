@@ -135,6 +135,18 @@ async function startBackendProd() {
 let mainWindow = null
 
 async function createMainWindow() {
+  // Start backend BEFORE creating the window so preload sees the correct port
+  try {
+    if (isDev) {
+      await startBackendDev()
+    } else {
+      await startBackendProd()
+    }
+  } catch (e) {
+    logLine('backend_start_error', e.message)
+    // Continue; UI will show an error but preload will still expose backendInfo
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -148,26 +160,11 @@ async function createMainWindow() {
   })
 
   const devUrl = `http://localhost:${FRONTEND_PORT}`
-  // In production, load from packaged resources
   const prodIndex = path.join(process.resourcesPath, 'frontend_dist', 'index.html')
-
   const loadTarget = isDev ? devUrl : `file://${prodIndex}`
   lastLoadTarget = loadTarget
 
   mainWindow.once('ready-to-show', () => mainWindow && mainWindow.show())
-
-  // Start backend in dev before loading UI (debug-first). For prod, placeholder for later.
-  try {
-    if (isDev) {
-      await startBackendDev()
-    } else {
-      await startBackendProd()
-    }
-  } catch (e) {
-    logLine('backend_start_error', e.message)
-    // Proceed to load UI anyway; frontend can show error state
-  }
-
   mainWindow.loadURL(loadTarget)
 
   if (isDev) {

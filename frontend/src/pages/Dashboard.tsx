@@ -47,10 +47,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [durationSum, setDurationSum] = useState<number>(0)
 
   useEffect(() => {
+    const waitForHealth = async () => {
+      // Retry /health briefly on app start to avoid initial network race
+      const maxAttempts = 10
+      const delayMs = 300
+      for (let i = 0; i < maxAttempts; i++) {
+        try {
+          // use raw fetch to avoid axios interceptors changing behavior
+          const res = await fetch('/health', { method: 'GET' })
+          if (res.ok) return true
+        } catch (_) {}
+        await new Promise(r => setTimeout(r, delayMs))
+      }
+      return false
+    }
+
     const load = async () => {
       try {
         setLoading(true)
         setError(null)
+
+        // Ensure backend is ready (avoids brief Network Error on first paint)
+        const healthy = await waitForHealth()
+        if (!healthy) {
+          throw new Error('Backend not ready')
+        }
 
         // Accurate totals using filtered queries for counts
         const [allRes, completedRes, processingRes, uploadedRes, latestRes] = await Promise.all([
@@ -76,8 +97,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         }, 0)
         setDurationSum(dur)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to load dashboard data'
-        setError(msg)
+        // Be tolerant at startup: if the only error is network/ready, try once more
+        try {
+          const msg = err instanceof Error ? err.message : 'Failed to load dashboard data'
+          if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('ready')) {
+            const healthy = await waitForHealth()
+            if (healthy) {
+              // Re-run the loader once
+              return load()
+            }
+          }
+          setError(msg)
+        } catch (e) {
+          const msg2 = e instanceof Error ? e.message : 'Failed to load dashboard data'
+          setError(msg2)
+        }
       } finally {
         setLoading(false)
       }
