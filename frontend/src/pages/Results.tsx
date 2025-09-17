@@ -474,7 +474,7 @@ const Results: React.FC = () => {
                                       }
                                     }}
                                   >
-                                    <img src="/copy_icon.png" alt="Copy" className="w-4 h-4" />
+                                    <img src={`${import.meta.env.BASE_URL}copy_icon.png`} alt="Copy" className="w-4 h-4" />
                                   </button>
                                   <button
                                     type="button"
