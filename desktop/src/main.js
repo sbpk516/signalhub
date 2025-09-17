@@ -95,7 +95,16 @@ function dataDir() {
 async function startBackendDev() {
   const port = await findPort()
   backendInfo.port = port
-  const env = { ...process.env, PATH: withBrewPath(process.env.PATH), SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir(), SIGNALHUB_ENABLE_TRANSCRIPTION: '1' }
+  const env = { 
+    ...process.env, 
+    PATH: withBrewPath(process.env.PATH), 
+    SIGNALHUB_MODE: 'desktop', 
+    SIGNALHUB_PORT: String(port), 
+    SIGNALHUB_DATA_DIR: dataDir(), 
+    SIGNALHUB_ENABLE_TRANSCRIPTION: '1',
+    SIGNALHUB_LIVE_TRANSCRIPTION: '1',
+    SIGNALHUB_LIVE_MIC: '1',
+  }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
   logLine('spawn_backend_dev', JSON.stringify({ cwd, args, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT, SIGNALHUB_DATA_DIR: env.SIGNALHUB_DATA_DIR } }))
@@ -122,6 +131,8 @@ async function startBackendProd() {
     SIGNALHUB_PORT: String(port), 
     SIGNALHUB_DATA_DIR: dataDir(), 
     SIGNALHUB_ENABLE_TRANSCRIPTION: '1',
+    SIGNALHUB_LIVE_TRANSCRIPTION: '1',
+    SIGNALHUB_LIVE_MIC: '1',
     // Ensure Whisper uses bundled cache for offline models
     XDG_CACHE_HOME: path.join(process.resourcesPath, 'whisper_cache'),
   }
