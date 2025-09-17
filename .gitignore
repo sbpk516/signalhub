@@ -156,6 +156,9 @@ GIT_ACCOUNT_MANAGER_GUIDE.md
 debug_logs/
 backend/debug_logs/
 
+# Built backend binaries (do not commit)
+backend/bin/
+
 # Test files (Local only)
 test_*.py
 check_*.py

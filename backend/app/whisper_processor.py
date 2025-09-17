@@ -4,11 +4,12 @@ Provides comprehensive speech-to-text functionality using OpenAI Whisper.
 """
 import os
 import json
+import os
 try:
     import whisper  # type: ignore
     import torch  # type: ignore
     _WHISPER_AVAILABLE = True
-except Exception as _e:  # Whisper/Torch are optional in desktop MVP
+except Exception as _e:  # Whisper/Torch optional
     whisper = None  # type: ignore
     torch = None  # type: ignore
     _WHISPER_AVAILABLE = False
@@ -23,6 +24,10 @@ from .logging_config import log_function_call, PerformanceMonitor
 
 # Configure logger for this module
 logger = logging.getLogger('signalhub.whisper_processor')
+
+def _transcription_enabled() -> bool:
+    return os.getenv("SIGNALHUB_ENABLE_TRANSCRIPTION", "0") == "1"
+
 
 class WhisperProcessor:
     """
@@ -50,10 +55,11 @@ class WhisperProcessor:
         self.transcripts_dir = Path(settings.upload_dir) / "transcripts"
         self.transcripts_dir.mkdir(exist_ok=True)
         
-        # Initialize model if libraries available
-        if _WHISPER_AVAILABLE:
-            self._load_model()
-        else:
+        # Lazy-load model on first use; warn if disabled or libs missing
+        self._model_loaded = False
+        if not _transcription_enabled():
+            logger.warning("Transcription disabled via SIGNALHUB_ENABLE_TRANSCRIPTION=0")
+        if not _WHISPER_AVAILABLE:
             logger.warning("Whisper/Torch not available. Transcription disabled.")
         
         logger.info(f"Whisper processor initialized with model: {model_name} on {self.device}")
@@ -87,6 +93,7 @@ class WhisperProcessor:
                     }
                 )
                 
+                self._model_loaded = True
                 return True
                 
         except Exception as e:
@@ -128,15 +135,28 @@ class WhisperProcessor:
         """
         logger.info(f"Starting transcription: {audio_path}")
         
-        if not self.model:
-            error_msg = "Whisper model not loaded"
-            logger.error(error_msg)
+        if not _transcription_enabled():
+            error_msg = "Transcription disabled (env flag)"
+            logger.warning(error_msg)
             return {
                 "audio_path": audio_path,
                 "transcription_success": False,
                 "error": error_msg,
                 "transcription_timestamp": datetime.now().isoformat()
             }
+
+        if not self.model:
+            # Lazy load on demand
+            ok = self._load_model()
+            if not ok or not self.model:
+                error_msg = "Whisper model not loaded"
+                logger.error(error_msg)
+                return {
+                    "audio_path": audio_path,
+                    "transcription_success": False,
+                    "error": error_msg,
+                    "transcription_timestamp": datetime.now().isoformat()
+                }
         
         with PerformanceMonitor("whisper_transcription") as monitor:
             try:
