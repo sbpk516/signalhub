@@ -109,15 +109,14 @@ async def health_check():
         db = next(get_db())
         db.execute(text("SELECT 1"))
         db.close()
-        
-    return {
-        "status": "healthy",
-        "database": "connected",
-        "features": {
-            "live_transcription": is_live_transcription_enabled()
-        },
-        "timestamp": datetime.now().isoformat()
-    }
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "features": {
+                "live_transcription": is_live_transcription_enabled()
+            },
+            "timestamp": datetime.now().isoformat()
+        }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
