@@ -82,14 +82,39 @@ function waitForHealth(port, { attempts = 20, delayMs = 500 } = {}) {
   })
 }
 
+function dataDir() {
+  // Ensure a stable data dir for DB/uploads/logs
+  return app.getPath('userData')
+}
+
 async function startBackendDev() {
   const port = await findPort()
   backendInfo.port = port
-  const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port) }
+  const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir() }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
   logLine('spawn_backend_dev', JSON.stringify({ cwd, args, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT } }))
   backendProcess = spawn(process.env.ELECTRON_PYTHON || 'python', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  backendInfo.pid = backendProcess.pid
+  backendProcess.stdout.on('data', d => logLine('backend_stdout', String(d).trim()))
+  backendProcess.stderr.on('data', d => logLine('backend_stderr', String(d).trim()))
+  backendProcess.on('exit', (code, signal) => logLine('backend_exit', `code=${code}`, `signal=${signal}`))
+  try {
+    await waitForHealth(port)
+  } catch (e) {
+    logLine('backend_health_failed', e.message)
+    throw e
+  }
+}
+
+async function startBackendProd() {
+  const port = await findPort()
+  backendInfo.port = port
+  const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir() }
+  const binName = process.platform === 'win32' ? 'signalhub-backend.exe' : 'signalhub-backend'
+  const binPath = path.join(process.resourcesPath, 'backend', binName)
+  logLine('spawn_backend_prod', JSON.stringify({ binPath, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT } }))
+  backendProcess = spawn(binPath, [], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   backendInfo.pid = backendProcess.pid
   backendProcess.stdout.on('data', d => logLine('backend_stdout', String(d).trim()))
   backendProcess.stderr.on('data', d => logLine('backend_stderr', String(d).trim()))
@@ -130,6 +155,8 @@ async function createMainWindow() {
   try {
     if (isDev) {
       await startBackendDev()
+    } else {
+      await startBackendProd()
     }
   } catch (e) {
     logLine('backend_start_error', e.message)

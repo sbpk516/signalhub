@@ -2,8 +2,9 @@
 Configuration settings for SignalHub application.
 """
 from pydantic_settings import BaseSettings
-from typing import List, Optional, Union
+from typing import List, Union
 import os
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -11,7 +12,7 @@ class Settings(BaseSettings):
     
     # Database Configuration
     database_url: str = "postgresql://signalhub:signalhub123@localhost:5432/signalhub"
-    # For SQLite: "sqlite:///./signalhub.db"
+    # For SQLite (desktop mode): set via env based on SIGNALHUB_DATA_DIR
     
     # Application Configuration
     app_name: str = "SignalHub"
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     
     # File Upload Configuration
     max_file_size: Union[int, str] = 100 * 1024 * 1024  # 100MB in bytes
-    upload_dir: str = "../audio_uploads"  # Go up one level from backend/ to project root
+    upload_dir: str = "../audio_uploads"  # Overridden in desktop mode
     
     @property
     def max_file_size_bytes(self) -> int:
@@ -53,7 +54,7 @@ class Settings(BaseSettings):
                 return int(size_str)
         return self.max_file_size
     
-    class Config:
+class Config:
         env_file = ".env"
         case_sensitive = False
 
@@ -62,11 +63,44 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def _desktop_data_dir() -> Path:
+    """Resolve desktop data directory from env."""
+    data_dir = os.getenv("SIGNALHUB_DATA_DIR")
+    if data_dir:
+        return Path(data_dir)
+    # Fallback to local folder if not provided
+    return Path.cwd() / "signalhub_data"
+
+
 def get_database_url() -> str:
-    """Get database URL from environment or use default."""
+    """Get database URL from environment or use default.
+
+    In desktop mode (SIGNALHUB_MODE=desktop), prefer SQLite DB under the provided data dir.
+    """
+    # Desktop mode override
+    if os.getenv("SIGNALHUB_MODE", "").lower() == "desktop":
+        data_dir = _desktop_data_dir()
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        db_path = data_dir / "signalhub.db"
+        return f"sqlite:///{db_path}"
+    # Server/default mode
     return os.getenv("DATABASE_URL", settings.database_url)
 
 
 def get_secret_key() -> str:
     """Get secret key from environment or use default."""
     return os.getenv("SECRET_KEY", settings.secret_key)
+
+
+# Override upload_dir for desktop mode at import-time
+if os.getenv("SIGNALHUB_MODE", "").lower() == "desktop":
+    data_dir = _desktop_data_dir()
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    # Place uploads directory under data dir
+    settings.upload_dir = str(data_dir / "uploads")

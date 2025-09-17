@@ -200,6 +200,17 @@ Notes:
   - then `cd ../desktop && npm run dist`
   - API base URL switching for packaged apps is handled automatically.
 
+### Bundled Backend (Production)
+- Build backend binary (once per OS):
+  - Ensure `pyinstaller` is installed in your venv: `pip install pyinstaller`
+  - Run: `bash backend/build-backend.sh`
+  - Output binary will be placed in `backend/bin/` (included automatically by the packager)
+- Package the desktop app (includes backend binary):
+  - `cd frontend && npm run build:electron`
+  - `cd ../desktop && npm run dist`
+- On launch, the app spawns the backend binary on `127.0.0.1:<free_port>` and waits for health
+- Data (SQLite DB, uploads, logs) are stored under the OS user data directory (e.g., `~/Library/Application Support/SignalHub`)
+
 
 ## 📁 **Project Structure**
 

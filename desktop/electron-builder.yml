@@ -11,6 +11,9 @@ extraResources:
   # Include the built frontend (relative to desktop/ when running builder)
   - from: ../frontend/dist
     to: frontend_dist
+  # Include prebuilt backend binaries (place binaries under backend/bin before packaging)
+  - from: ../backend/bin
+    to: backend
 mac:
   target: [dmg]
   category: public.app-category.productivity
@@ -21,4 +24,3 @@ publish:
   owner: sbpk516
   repo: signalhub
   releaseType: draft
-
