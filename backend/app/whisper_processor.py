@@ -14,12 +14,13 @@ except Exception as _e:  # Whisper/Torch optional
     torch = None  # type: ignore
     _WHISPER_AVAILABLE = False
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Generator
 from datetime import datetime
 import logging
 
 from .config import settings
 from .debug_utils import debug_helper
+from .audio_processor import audio_processor
 from .logging_config import log_function_call, PerformanceMonitor
 
 # Configure logger for this module
@@ -261,6 +262,103 @@ class WhisperProcessor:
                 valid_segments += 1
         
         return total_confidence / valid_segments if valid_segments > 0 else 0.0
+
+    def transcribe_in_chunks(
+        self,
+        audio_path: str,
+        chunk_sec: int = 15,
+        stride_sec: int = 5,
+        language: Optional[str] = None,
+        task: str = "transcribe",
+    ) -> Generator[Dict[str, Any], None, Dict[str, Any]]:
+        """
+        Progressive transcription: yields partial text per chunk and returns a final summary.
+
+        Yields:
+            {"chunk_index", "start_sec", "end_sec", "text"}
+
+        Returns (via StopIteration.value):
+            Final dict with accumulated text and metadata (same spirit as transcribe_audio).
+        """
+        logger.info(f"Starting chunked transcription: {audio_path} (chunk={chunk_sec}s, stride={stride_sec}s)")
+
+        if not _transcription_enabled():
+            raise RuntimeError("Transcription disabled via env")
+
+        if not self.model:
+            ok = self._load_model()
+            if not ok or not self.model:
+                raise RuntimeError("Whisper model not loaded")
+
+        # Determine duration (best-effort)
+        try:
+            from .audio_processor import audio_processor as _ap
+            info = _ap.analyze_audio_file(audio_path)
+            total_duration = float(info.get("duration_seconds") or 0.0)
+        except Exception:
+            total_duration = 0.0
+
+        # Build chunk schedule
+        idx = 0
+        start = 0.0
+        final_text_parts: List[str] = []
+        options = {
+            "task": task,
+            "verbose": False,
+            "fp16": False,
+        }
+        if language:
+            options["language"] = language
+
+        while True:
+            end = start + float(chunk_sec)
+            # Guard last chunk if total is known
+            duration = float(chunk_sec)
+            if total_duration and end > total_duration + 0.25:
+                # No more audio expected
+                break
+            # Extract segment
+            seg = audio_processor.extract_audio_segment(audio_path, start_time=start, duration=duration, output_format="wav")
+            if not seg.get("extraction_success"):
+                logger.warning(f"Chunk extraction failed at {start}s: {seg.get('error')}
+")
+                break
+            seg_path = seg["output_path"]
+            # Transcribe segment
+            try:
+                result = self.model.transcribe(seg_path, **options)
+                text = (result.get("text") or "").strip()
+            except Exception as e:
+                debug_helper.capture_exception("whisper_chunk_transcription", e, {"start": start, "duration": duration})
+                text = ""
+
+            yield {
+                "chunk_index": idx,
+                "start_sec": round(start, 3),
+                "end_sec": round(start + duration, 3),
+                "text": text,
+            }
+            if text:
+                final_text_parts.append(text)
+
+            idx += 1
+            # Advance with stride (overlap = chunk - stride)
+            start += max(0.1, float(chunk_sec - stride_sec))
+            if total_duration and start >= total_duration:
+                break
+
+        final_text = " ".join(final_text_parts).strip()
+        summary = {
+            "audio_path": audio_path,
+            "transcription_success": True,
+            "text": final_text,
+            "language": language or "unknown",
+            "transcription_timestamp": datetime.now().isoformat(),
+            "model_used": self.model_name,
+            "device_used": self.device,
+            "chunk_count": idx,
+        }
+        return summary
     
     @log_function_call
     def save_transcript(

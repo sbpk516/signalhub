@@ -13,10 +13,11 @@ from datetime import datetime
 import logging
 from fastapi import UploadFile
 
-from .config import settings
+from .config import settings, is_live_transcription_enabled
 from .upload import AudioUploadHandler
 from .audio_processor import AudioProcessor
 from .whisper_processor import WhisperProcessor
+from .live_events import event_bus
 from .db_integration import DatabaseIntegration
 from .nlp_processor import nlp_processor
 from .debug_utils import debug_helper
@@ -440,12 +441,57 @@ class AudioProcessingPipeline:
             # Update status
             self.db_integration.update_call_status(call_id, "transcribing")
             
-            # Transcribe audio with retry logic
-            transcription_result = await self._retry_operation(
-                lambda: self.whisper_processor.transcribe_audio(audio_path),
-                operation_name="transcription",
-                max_retries=2
-            )
+            live_enabled = is_live_transcription_enabled()
+            logger.info(f"Live transcription enabled for call {call_id}: {live_enabled}")
+
+            if live_enabled:
+                # Chunked progressive transcription with SSE emits
+                import os
+                chunk_sec = int(os.getenv("SIGNALHUB_LIVE_CHUNK_SEC", "15") or 15)
+                stride_sec = int(os.getenv("SIGNALHUB_LIVE_STRIDE_SEC", "5") or 5)
+                final_parts: List[str] = []
+
+                def _do_chunked():
+                    for part in self.whisper_processor.transcribe_in_chunks(audio_path, chunk_sec=chunk_sec, stride_sec=stride_sec):
+                        # Emit partial
+                        try:
+                            # Add call_id for client convenience
+                            payload = dict(part)
+                            payload["call_id"] = call_id
+                            payload["type"] = "partial"
+                            # Publish but don't await inside tight loop; event_bus.publish is async
+                            # We will schedule and wait inline via asyncio
+                            import asyncio
+                            asyncio.get_event_loop().create_task(event_bus.publish(call_id, payload))
+                        except Exception as e:
+                            logger.warning(f"Failed to publish SSE partial for {call_id}: {e}")
+                        if part.get("text"):
+                            final_parts.append(part["text"]) 
+                    # After loop completes, send complete
+                    import asyncio
+                    asyncio.get_event_loop().create_task(event_bus.complete(call_id))
+                    return {
+                        "audio_path": audio_path,
+                        "transcription_success": True,
+                        "text": " ".join(final_parts).strip(),
+                        "language": "unknown",
+                        "transcription_timestamp": datetime.now().isoformat(),
+                        "model_used": self.whisper_processor.model_name,
+                        "device_used": self.whisper_processor.device,
+                    }
+
+                transcription_result = await self._retry_operation(
+                    _do_chunked,
+                    operation_name="transcription",
+                    max_retries=0
+                )
+            else:
+                # Transcribe audio with retry logic (batch)
+                transcription_result = await self._retry_operation(
+                    lambda: self.whisper_processor.transcribe_audio(audio_path),
+                    operation_name="transcription",
+                    max_retries=2
+                )
             
             # Save transcript
             transcript_path = self.whisper_processor.save_transcript(

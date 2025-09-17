@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { apiClient } from '@/services/api/client'
 import { deleteResult, clearAllResults } from '@/services/api/results'
 import { formatTranscript } from '@/utils/transcript'
+import { useTranscriptionStream } from '@/services/api/live'
 
 // STEP 2: Add basic API integration
 // We'll add API call to fetch results from backend
@@ -415,6 +416,13 @@ const Results: React.FC = () => {
                         {reanalyzeErrors[result.call_id] && (
                           <div className="text-sm text-red-600">{reanalyzeErrors[result.call_id]}</div>
                         )}
+                        {/* Live transcript (beta) when processing/transcribing */}
+                        {(['processing','transcribing'] as const).includes(result.status as any) && (
+                          <div className="mb-3 p-3 border border-yellow-200 rounded bg-yellow-50 text-sm">
+                            <div className="font-medium text-yellow-800 mb-1">Live Transcript (beta)</div>
+                            <LiveTranscript callId={result.call_id} />
+                          </div>
+                        )}
                         {detailsCache[result.call_id] && (
                           <div className="space-y-3">
                             <div>
@@ -592,6 +600,24 @@ const TranscriptBlock: React.FC<{ text: string; enabled: boolean; sentencesPerPa
           {p}
         </p>
       ))}
+    </div>
+  )
+}
+
+function LiveTranscript({ callId }: { callId: string }) {
+  const { text, completed, error, progress } = useTranscriptionStream(callId)
+  if (error) {
+    return <div className="text-xs text-gray-500">Live updates unavailable.</div>
+  }
+  return (
+    <div>
+      {progress != null && !completed && (
+        <div className="text-xs text-gray-600 mb-1">Progress: {Math.round(progress)}%</div>
+      )}
+      <div className="whitespace-pre-wrap text-gray-800 text-sm min-h-[2rem]">
+        {text || (!completed ? 'Waiting for partial results…' : 'No text')}
+      </div>
+      {completed && <div className="mt-1 text-xs text-green-700">Completed</div>}
     </div>
   )
 }
