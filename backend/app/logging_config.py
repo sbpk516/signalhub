@@ -16,6 +16,10 @@ def setup_logging(log_level: str = "DEBUG", log_file: str = "logs/signalhub.log"
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_file: Path to log file
     """
+    # Route logs to SIGNALHUB_DATA_DIR when available (desktop mode)
+    data_dir = os.getenv("SIGNALHUB_DATA_DIR")
+    if data_dir:
+        log_file = str(Path(data_dir) / "logs" / Path(log_file).name)
     # Create logs directory if it doesn't exist
     log_dir = Path(log_file).parent
     log_dir.mkdir(exist_ok=True)

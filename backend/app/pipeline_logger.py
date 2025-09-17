@@ -18,13 +18,24 @@ class PipelineLogger:
     """
     
     def __init__(self):
-        # Create logs directory if it doesn't exist
-        self.logs_dir = Path("logs")
-        self.logs_dir.mkdir(exist_ok=True)
-        
+        # Create logs directory under SIGNALHUB_DATA_DIR when available
+        data_dir = os.getenv("SIGNALHUB_DATA_DIR")
+        if data_dir:
+            base = Path(data_dir) / "logs"
+        else:
+            # macOS user library default; fallback to current working dir logs if not macOS
+            base = Path.home() / "Library" / "Application Support" / "SignalHub" / "logs" if os.name == "posix" else Path.cwd() / "logs"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            import tempfile
+            base = Path(tempfile.gettempdir()) / "signalhub_logs"
+            base.mkdir(parents=True, exist_ok=True)
+
+        self.logs_dir = base
         # Create pipeline_logs subdirectory
         self.pipeline_logs_dir = self.logs_dir / "pipeline_logs"
-        self.pipeline_logs_dir.mkdir(exist_ok=True)
+        self.pipeline_logs_dir.mkdir(parents=True, exist_ok=True)
         
         logger.info(f"Pipeline logger initialized. Logs will be saved to: {self.pipeline_logs_dir}")
     
@@ -181,4 +192,3 @@ class PipelineLogger:
 
 # Global pipeline logger instance
 pipeline_logger = PipelineLogger()
-

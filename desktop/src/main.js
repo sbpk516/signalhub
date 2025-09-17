@@ -57,7 +57,7 @@ async function findPort(candidates = [8001, 8011, 8021]) {
   })
 }
 
-function waitForHealth(port, { attempts = 20, delayMs = 500 } = {}) {
+function waitForHealth(port, { attempts = (isDev ? 20 : 60), delayMs = 500 } = {}) {
   const url = `http://127.0.0.1:${port}/health`
   let attempt = 0
   return new Promise((resolve, reject) => {
@@ -93,7 +93,7 @@ async function startBackendDev() {
   const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir() }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
-  logLine('spawn_backend_dev', JSON.stringify({ cwd, args, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT } }))
+  logLine('spawn_backend_dev', JSON.stringify({ cwd, args, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT, SIGNALHUB_DATA_DIR: env.SIGNALHUB_DATA_DIR } }))
   backendProcess = spawn(process.env.ELECTRON_PYTHON || 'python', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
   backendInfo.pid = backendProcess.pid
   backendProcess.stdout.on('data', d => logLine('backend_stdout', String(d).trim()))
@@ -113,7 +113,7 @@ async function startBackendProd() {
   const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir() }
   const binName = process.platform === 'win32' ? 'signalhub-backend.exe' : 'signalhub-backend'
   const binPath = path.join(process.resourcesPath, 'backend', binName)
-  logLine('spawn_backend_prod', JSON.stringify({ binPath, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT } }))
+  logLine('spawn_backend_prod', JSON.stringify({ binPath, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT, SIGNALHUB_DATA_DIR: env.SIGNALHUB_DATA_DIR } }))
   backendProcess = spawn(binPath, [], { env, stdio: ['ignore', 'pipe', 'pipe'] })
   backendInfo.pid = backendProcess.pid
   backendProcess.stdout.on('data', d => logLine('backend_stdout', String(d).trim()))

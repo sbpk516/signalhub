@@ -4,8 +4,14 @@ Provides comprehensive speech-to-text functionality using OpenAI Whisper.
 """
 import os
 import json
-import whisper
-import torch
+try:
+    import whisper  # type: ignore
+    import torch  # type: ignore
+    _WHISPER_AVAILABLE = True
+except Exception as _e:  # Whisper/Torch are optional in desktop MVP
+    whisper = None  # type: ignore
+    torch = None  # type: ignore
+    _WHISPER_AVAILABLE = False
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -33,14 +39,22 @@ class WhisperProcessor:
         """
         self.model_name = model_name
         self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu"
+        if _WHISPER_AVAILABLE:
+            try:
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"  # type: ignore[attr-defined]
+            except Exception:
+                self.device = "cpu"
         
         # Create transcripts directory
         self.transcripts_dir = Path(settings.upload_dir) / "transcripts"
         self.transcripts_dir.mkdir(exist_ok=True)
         
-        # Initialize model
-        self._load_model()
+        # Initialize model if libraries available
+        if _WHISPER_AVAILABLE:
+            self._load_model()
+        else:
+            logger.warning("Whisper/Torch not available. Transcription disabled.")
         
         logger.info(f"Whisper processor initialized with model: {model_name} on {self.device}")
     
@@ -56,6 +70,8 @@ class WhisperProcessor:
             
             with PerformanceMonitor("whisper_model_loading") as monitor:
                 # Load model with device specification
+                if not _WHISPER_AVAILABLE:
+                    raise RuntimeError("Whisper/Torch not available")
                 self.model = whisper.load_model(self.model_name, device=self.device)
                 
                 logger.info(f"Whisper model {self.model_name} loaded successfully on {self.device}")

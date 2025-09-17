@@ -177,8 +177,9 @@ class PipelineDebugLogger:
     """
     
     def __init__(self):
-        self.debug_dir = Path("debug_logs")
-        self.debug_dir.mkdir(exist_ok=True)
+        # Use the centralized debug helper's directory which respects SIGNALHUB_DATA_DIR
+        from .debug_utils import debug_helper as _dh
+        self.debug_dir = _dh.debug_dir
         logger.info(f"Pipeline debug logger initialized with directory: {self.debug_dir}")
     
     def log_pipeline_start(self, call_id: str, file_info: Dict):

@@ -102,5 +102,13 @@ if os.getenv("SIGNALHUB_MODE", "").lower() == "desktop":
         data_dir.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
-    # Place uploads directory under data dir
-    settings.upload_dir = str(data_dir / "uploads")
+    # Place uploads and logs under the desktop data directory
+    uploads_dir = data_dir / "uploads"
+    logs_dir = data_dir / "logs"
+    try:
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    settings.upload_dir = str(uploads_dir)
+    settings.log_file = str(logs_dir / "signalhub.log")

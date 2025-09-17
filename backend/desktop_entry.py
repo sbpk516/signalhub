@@ -13,12 +13,8 @@ from typing import Optional
 
 import uvicorn
 
-try:
-    # Ensure app import works when bundled (PyInstaller --add-data app:app)
-    from app.main import app  # type: ignore
-except Exception as e:
-    print(f"❌ Failed to import FastAPI app: {e}")
-    sys.exit(1)
+APP_IMPORT_ERROR = None
+app = None  # type: ignore
 
 
 def getenv_int(name: str, default: int) -> int:
@@ -38,7 +34,33 @@ def main() -> int:
     data_dir = os.getenv("SIGNALHUB_DATA_DIR")
     if data_dir:
         os.makedirs(data_dir, exist_ok=True)
+        logs_dir = os.path.join(data_dir, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
         print(f"📁 Desktop data dir: {data_dir}")
+        # Sentinel: prove writeability and capture earliest failures
+        try:
+            with open(os.path.join(logs_dir, "backend_boot.txt"), "a") as f:
+                f.write("boot\n")
+        except Exception as se:
+            print(f"❌ Log dir not writable: {se}")
+
+    # Import app only after logs dir exists so we can record any error
+    global app
+    if app is None:
+        try:
+            from app.main import app as _app  # type: ignore
+            app = _app
+        except Exception as e:
+            # Also write error to logs if possible
+            err = f"Failed to import FastAPI app: {e}"
+            print(f"❌ {err}")
+            if data_dir:
+                try:
+                    with open(os.path.join(data_dir, "logs", "backend_import_error.txt"), "a") as f:
+                        f.write(str(err) + "\n")
+                except Exception:
+                    pass
+            return 1
 
     print(f"🚀 Starting bundled backend on http://{host}:{port}")
     try:
@@ -51,4 +73,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

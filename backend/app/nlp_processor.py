@@ -9,6 +9,7 @@ This module provides core NLP processing capabilities including:
 """
 
 import json
+import os
 import logging
 import asyncio
 from typing import Dict, List, Any, Optional, Tuple
@@ -93,14 +94,18 @@ class NLPProcessor:
     def _initialize_nltk(self):
         """Initialize NLTK components and download required data."""
         try:
-            # Attempt to download required NLTK data (no-op if present)
-            try:
-                nltk.download('punkt', quiet=True)
-                nltk.download('stopwords', quiet=True)
-                nltk.download('wordnet', quiet=True)
-            except Exception as dl_err:
-                # Download failures are tolerated; we will fall back
-                self.logger.warning(f"NLTK download failed or unavailable, falling back: {dl_err}")
+            offline_mode = os.getenv("SIGNALHUB_MODE", "").lower() == "desktop" or os.getenv("SIGNALHUB_OFFLINE", "0") == "1"
+            if offline_mode:
+                # In offline/desktop mode, skip downloads to avoid startup delays/timeouts
+                self.logger.info("NLTK offline mode: skipping downloads; using bundled resources or fallbacks")
+            else:
+                try:
+                    nltk.download('punkt', quiet=True)
+                    nltk.download('stopwords', quiet=True)
+                    nltk.download('wordnet', quiet=True)
+                except Exception as dl_err:
+                    # Download failures are tolerated; we will fall back
+                    self.logger.warning(f"NLTK download failed or unavailable, falling back: {dl_err}")
 
             # Try to initialize components; if this fails, use fallbacks
             try:

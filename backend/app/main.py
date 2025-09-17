@@ -10,7 +10,7 @@ import logging
 import json
 import os
 
-from .config import settings
+from .config import settings, get_database_url
 from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
 from .upload import upload_audio_file, get_upload_status
@@ -22,16 +22,22 @@ from .db_integration import db_integration
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
-os.makedirs("logs", exist_ok=True)
+log_dir = os.path.dirname(settings.log_file) or "."
+try:
+    os.makedirs(log_dir, exist_ok=True)
+except Exception:
+    # If settings.log_file resolves to a read-only path, fallback to SIGNALHUB_DATA_DIR/logs
+    data_dir = os.getenv("SIGNALHUB_DATA_DIR")
+    if data_dir:
+        fallback_dir = os.path.join(data_dir, "logs")
+        os.makedirs(fallback_dir, exist_ok=True)
+        settings.log_file = os.path.join(fallback_dir, os.path.basename(settings.log_file))
 
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(settings.log_file),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler(), logging.FileHandler(settings.log_file)]
 )
 logger = logging.getLogger(__name__)
 
@@ -58,6 +64,18 @@ async def startup_event():
     """Initialize application on startup."""
     logger.info("Starting SignalHub application...")
     try:
+        # Log resolved database URL (desktop/sqlite shows file path)
+        try:
+            db_url = get_database_url()
+            if db_url.startswith("sqlite"):
+                logger.info(f"Using SQLite DB: {db_url}")
+            else:
+                # Avoid logging credentials; just note the driver
+                driver = db_url.split(":", 1)[0]
+                logger.info(f"Using database driver: {driver}")
+        except Exception:
+            pass
+
         # Create database tables
         create_tables()
         logger.info("Database tables created successfully")
