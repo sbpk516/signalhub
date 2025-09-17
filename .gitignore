@@ -158,6 +158,7 @@ backend/debug_logs/
 
 # Built backend binaries (do not commit)
 backend/bin/
+backend/whisper_cache/
 
 # Test files (Local only)
 test_*.py

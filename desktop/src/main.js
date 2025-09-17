@@ -115,7 +115,16 @@ async function startBackendDev() {
 async function startBackendProd() {
   const port = await findPort()
   backendInfo.port = port
-  const env = { ...process.env, PATH: withBrewPath(process.env.PATH), SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir(), SIGNALHUB_ENABLE_TRANSCRIPTION: '1' }
+  const env = { 
+    ...process.env, 
+    PATH: withBrewPath(process.env.PATH), 
+    SIGNALHUB_MODE: 'desktop', 
+    SIGNALHUB_PORT: String(port), 
+    SIGNALHUB_DATA_DIR: dataDir(), 
+    SIGNALHUB_ENABLE_TRANSCRIPTION: '1',
+    // Ensure Whisper uses bundled cache for offline models
+    XDG_CACHE_HOME: path.join(process.resourcesPath, 'whisper_cache'),
+  }
   const binName = process.platform === 'win32' ? 'signalhub-backend.exe' : 'signalhub-backend'
   const binPath = path.join(process.resourcesPath, 'backend', binName)
   logLine('spawn_backend_prod', JSON.stringify({ binPath, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT, SIGNALHUB_DATA_DIR: env.SIGNALHUB_DATA_DIR } }))

@@ -14,6 +14,9 @@ extraResources:
   # Include prebuilt backend binaries (place binaries under backend/bin before packaging)
   - from: ../backend/bin
     to: backend
+  # Include Whisper model cache for offline transcription
+  - from: ../backend/whisper_cache
+    to: whisper_cache
 mac:
   target: [zip]
   category: public.app-category.productivity
