@@ -14,12 +14,12 @@ mkdir -p "$OUT"
 # Use start.py as entry or a small launcher that imports uvicorn app
 cd "$ROOT/backend"
 
-# PyInstaller one-file build
+# PyInstaller one-file build using desktop entrypoint
 pyinstaller \
   --onefile \
   --name signalhub-backend \
   --add-data "app:app" \
-  start.py
+  desktop_entry.py
 
 # Move artifact
 if [[ -f dist/signalhub-backend ]]; then
@@ -29,4 +29,3 @@ elif [[ -f dist/signalhub-backend.exe ]]; then
 fi
 
 echo "Done. Place the binary under backend/bin before packaging the desktop app."
-

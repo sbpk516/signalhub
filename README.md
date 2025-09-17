@@ -203,7 +203,7 @@ Notes:
 ### Bundled Backend (Production)
 - Build backend binary (once per OS):
   - Ensure `pyinstaller` is installed in your venv: `pip install pyinstaller`
-  - Run: `bash backend/build-backend.sh`
+  - Run: `bash backend/build-backend.sh` (uses `backend/desktop_entry.py` so env vars control port and data dir)
   - Output binary will be placed in `backend/bin/` (included automatically by the packager)
 - Package the desktop app (includes backend binary):
   - `cd frontend && npm run build:electron`
