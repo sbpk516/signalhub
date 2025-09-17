@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const fs = require('fs')
@@ -30,6 +30,7 @@ function logLine(...args) {
 
 let backendInfo = { port: 8001, pid: null, mode: isDev ? 'dev' : 'prod' }
 let backendProcess = null
+let lastLoadTarget = ''
 
 async function isPortFree(port) {
   return new Promise(resolve => {
@@ -121,6 +122,7 @@ async function createMainWindow() {
   const prodIndex = path.join(process.resourcesPath, 'frontend_dist', 'index.html')
 
   const loadTarget = isDev ? devUrl : `file://${prodIndex}`
+  lastLoadTarget = loadTarget
 
   mainWindow.once('ready-to-show', () => mainWindow && mainWindow.show())
 
@@ -142,6 +144,50 @@ async function createMainWindow() {
 }
 
 function createAppMenu() {
+  const openLogs = () => {
+    try {
+      const dir = path.join(app.getPath('userData'), 'logs')
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      shell.openPath(dir)
+    } catch (e) {
+      logLine('open_logs_error', e.message)
+    }
+  }
+
+  const openResources = () => {
+    try {
+      shell.openPath(process.resourcesPath)
+    } catch (e) {
+      logLine('open_resources_error', e.message)
+    }
+  }
+
+  const showBackendInfo = () => {
+    const msg = `Mode: ${backendInfo.mode}\nPort: ${backendInfo.port}\nPID: ${backendInfo.pid || 'n/a'}`
+    dialog.showMessageBox({ type: 'info', title: 'Backend Info', message: 'Backend Information', detail: msg })
+  }
+
+  const showLoadTarget = () => {
+    dialog.showMessageBox({ type: 'info', title: 'Load Target', message: 'Renderer Load Target', detail: lastLoadTarget || '(unknown)' })
+  }
+
+  const runHealthCheck = async () => {
+    const url = `http://127.0.0.1:${backendInfo.port}/health`
+    try {
+      const status = await new Promise((resolve, reject) => {
+        const req = http.get(url, res => {
+          const ok = res.statusCode && res.statusCode >= 200 && res.statusCode < 300
+          res.resume()
+          ok ? resolve('OK') : reject(new Error(`HTTP ${res.statusCode}`))
+        })
+        req.on('error', reject)
+      })
+      dialog.showMessageBox({ type: 'info', title: 'Health Check', message: `Backend health: ${status}`, detail: url })
+    } catch (e) {
+      dialog.showMessageBox({ type: 'error', title: 'Health Check', message: 'Backend health failed', detail: `${url}\n${e.message}` })
+    }
+  }
+
   const template = [
     {
       label: 'SignalHub',
@@ -159,6 +205,19 @@ function createAppMenu() {
         { role: 'reload' },
         { role: 'forcereload' },
         { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Debug',
+      submenu: [
+        { label: 'Toggle DevTools', click: () => { if (mainWindow) mainWindow.webContents.toggleDevTools() } },
+        { type: 'separator' },
+        { label: 'Show Backend Info', click: showBackendInfo },
+        { label: 'Run Health Check', click: runHealthCheck },
+        { label: 'Show Load Target', click: showLoadTarget },
+        { type: 'separator' },
+        { label: 'Open Logs Folder', click: openLogs },
+        { label: 'Open Resources Folder', click: openResources }
       ]
     }
   ]
