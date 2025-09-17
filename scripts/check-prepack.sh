@@ -11,6 +11,9 @@ fail() { echo "[prepack][ERROR] $1" >&2; exit 1; }
 warn() { echo "[prepack][WARN]  $1"; }
 ok() { echo "[prepack][OK]    $1"; }
 
+# 0) Backend Python syntax check (fast fail)
+bash "$ROOT_DIR/scripts/check-backend.sh"
+
 # 1) Frontend build exists and uses relative asset paths
 if [[ ! -f "$ROOT_DIR/frontend/dist/index.html" ]]; then
   fail "frontend/dist/index.html not found. Run: cd frontend && npm run build:electron"
