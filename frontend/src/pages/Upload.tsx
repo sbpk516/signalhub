@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Card } from '../components/Shared'
 import { API_ENDPOINTS, API_BASE_URL, UI_CONFIG } from '../types/constants'
 import { apiClient } from '@/services/api/client'
+import { useTranscriptionStream } from '@/services/api/live'
 
 interface UploadFile {
   id: string
@@ -352,6 +353,12 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
             </ul>
           </div>
 
+          {/* Live Mic (beta) */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h4 className="font-medium text-yellow-900 mb-2">🎤 Live Mic (beta)</h4>
+            <LiveMicPanel />
+          </div>
+
           {/* Return to Dashboard Button */}
           <div className="text-center pt-4">
             <button
@@ -382,3 +389,89 @@ const processingStages = ['Processing audio…', 'Transcribing speech…', 'Runn
 // Hook-like logic in component scope will compute label
 
 export default Upload
+
+function LiveMicPanel() {
+  const [recording, setRecording] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const mediaRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const { text, completed } = useTranscriptionStream(sessionId)
+
+  const start = useCallback(async () => {
+    try {
+      setError(null)
+      // Start session
+      const res = await apiClient.post('/api/v1/live/start')
+      const sid = res.data?.session_id as string
+      if (!sid) throw new Error('Failed to create session')
+      setSessionId(sid)
+
+      // Get mic
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      mediaRef.current = mr
+
+      mr.ondataavailable = async (ev: BlobEvent) => {
+        try {
+          if (!sessionId && sid) setSessionId(sid)
+          const s = sessionId || sid
+          if (!s) return
+          const blob = ev.data
+          if (!blob || blob.size === 0) return
+          const fd = new FormData()
+          // Name chunk with timestamp to aid backend debugging
+          const file = new File([blob], `chunk_${Date.now()}.webm`, { type: blob.type })
+          fd.append('file', file)
+          await apiClient.post(`/api/v1/live/chunk?session_id=${encodeURIComponent(s)}`, fd)
+        } catch (e) {
+          console.warn('chunk upload failed', e)
+        }
+      }
+      mr.start(2000) // 2s chunks
+      setRecording(true)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to start recording')
+      try { mediaRef.current?.stop() } catch {}
+      try { streamRef.current?.getTracks().forEach(t => t.stop()) } catch {}
+      setRecording(false)
+      setSessionId(null)
+    }
+  }, [sessionId])
+
+  const stop = useCallback(async () => {
+    try {
+      mediaRef.current?.stop()
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    } catch {}
+    setRecording(false)
+    try {
+      if (sessionId) {
+        await apiClient.post(`/api/v1/live/stop?session_id=${encodeURIComponent(sessionId)}`)
+      }
+    } catch (e) {
+      console.warn('stop failed', e)
+    }
+  }, [sessionId])
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-2">
+        {!recording ? (
+          <button onClick={start} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700">● Record</button>
+        ) : (
+          <button onClick={stop} className="px-3 py-1.5 bg-gray-700 text-white rounded hover:bg-gray-800">■ Stop</button>
+        )}
+        {sessionId && (
+          <span className="text-xs text-gray-600">Session: {sessionId.slice(0,8)}</span>
+        )}
+      </div>
+      {error && <div className="text-xs text-red-700 mb-2">{error}</div>}
+      <div className="text-sm text-gray-800 whitespace-pre-wrap min-h-[2rem]">
+        {text || (recording ? 'Listening…' : 'Press Record to start')}
+      </div>
+      {completed && <div className="text-xs text-green-700 mt-1">Completed</div>}
+    </div>
+  )
+}

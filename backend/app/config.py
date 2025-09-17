@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # Feature Flags
     # Live/progressive transcription (SSE). Disabled by default for safety.
     live_transcription: bool = False
+    # Microphone-based live capture (MediaRecorder chunks). Disabled by default.
+    live_mic: bool = False
     
     @property
     def max_file_size_bytes(self) -> int:
@@ -105,6 +107,14 @@ def is_live_transcription_enabled() -> bool:
     Controlled by SIGNALHUB_LIVE_TRANSCRIPTION=1. Defaults to False.
     """
     return os.getenv("SIGNALHUB_LIVE_TRANSCRIPTION", "0") == "1"
+
+
+def is_live_mic_enabled() -> bool:
+    """Return True if mic-based live capture is enabled via env.
+
+    Controlled by SIGNALHUB_LIVE_MIC=1. Defaults to False.
+    """
+    return os.getenv("SIGNALHUB_LIVE_MIC", "0") == "1"
 
 
 # Override upload_dir for desktop mode at import-time

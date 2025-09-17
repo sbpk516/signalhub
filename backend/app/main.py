@@ -12,7 +12,7 @@ import logging
 import json
 import os
 
-from .config import settings, get_database_url, is_live_transcription_enabled
+from .config import settings, get_database_url, is_live_transcription_enabled, is_live_mic_enabled
 from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
 from .upload import upload_audio_file, get_upload_status
@@ -22,6 +22,9 @@ from .debug_utils import debug_helper
 from .nlp_processor import nlp_processor
 from .db_integration import db_integration
 from .live_events import event_bus, sse_format
+from .live_mic import live_sessions
+from .audio_processor import audio_processor
+from .whisper_processor import whisper_processor
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -113,7 +116,8 @@ async def health_check():
             "status": "healthy",
             "database": "connected",
             "features": {
-                "live_transcription": is_live_transcription_enabled()
+                "live_transcription": is_live_transcription_enabled(),
+                "live_mic": is_live_mic_enabled(),
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -332,6 +336,74 @@ async def get_pipeline_debug(call_id: str):
         
     except Exception as e:
         logger.error(f"Failed to get debug info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# PHASE A: Mic-based live capture endpoints (feature-flagged)
+# ============================================================================
+
+@app.post("/api/v1/live/start")
+async def live_start():
+    if not is_live_mic_enabled():
+        raise HTTPException(status_code=404, detail="Live mic disabled")
+    sess = live_sessions.start()
+    return {"session_id": sess.session_id}
+
+
+@app.post("/api/v1/live/chunk")
+async def live_chunk(session_id: str, file: UploadFile = File(...)):
+    if not is_live_mic_enabled():
+        raise HTTPException(status_code=404, detail="Live mic disabled")
+    try:
+        # Save raw upload to a temp file under session dir
+        sess = live_sessions.get(session_id)
+        if not sess:
+            raise HTTPException(status_code=404, detail="session not found")
+        raw_dir = sess.dir / "incoming"
+        raw_dir.mkdir(exist_ok=True)
+        raw_path = raw_dir / f"{uuid.uuid4()}_{file.filename or 'chunk'}"
+        content = await file.read()
+        with open(raw_path, 'wb') as f:
+            f.write(content)
+        idx = live_sessions.add_raw_chunk(session_id, raw_path)
+
+        # Convert to wav mono 16k for Whisper
+        converted = audio_processor.convert_audio_format(str(sess.chunks[idx]), output_format="wav", sample_rate=16000, channels=1)
+        wav_path = converted.get("output_path") if converted.get("conversion_success") else str(sess.chunks[idx])
+
+        # Transcribe this chunk
+        part = whisper_processor.transcribe_audio(wav_path)
+        text = part.get("text", "") if part.get("transcription_success") else ""
+        live_sessions.set_partial(session_id, idx, text)
+
+        # Emit SSE partial under the same stream (session_id acts as call_id)
+        await event_bus.publish(session_id, {
+            "type": "partial",
+            "call_id": session_id,
+            "chunk_index": idx,
+            "text": text,
+        })
+        return {"ok": True, "chunk_index": idx, "text_length": len(text)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"live_chunk failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/live/stop")
+async def live_stop(session_id: str):
+    if not is_live_mic_enabled():
+        raise HTTPException(status_code=404, detail="Live mic disabled")
+    try:
+        out = live_sessions.stop(session_id)
+        await event_bus.complete(session_id)
+        return {"session_id": session_id, "final_text": out.get("final_text", "")}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session not found")
+    except Exception as e:
+        logger.error(f"live_stop failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
