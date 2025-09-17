@@ -68,7 +68,12 @@ export const createApiClient = (): AxiosInstance => {
   // - Dev (Vite, http://localhost:3000): keep relative URLs ('') so Vite proxy works
   // - Packaged Electron (file://): use absolute API_BASE_URL (e.g., http://127.0.0.1:8001)
   const isFileProtocol = typeof window !== 'undefined' && window.location?.protocol === 'file:'
-  const chosenBaseURL = isFileProtocol ? API_BASE_URL : ''
+  // If running inside packaged Electron, prefer port provided by preload (window.api.backend.port)
+  // Fallback to API_BASE_URL and finally to relative URLs (Vite proxy in dev)
+  const electronPort = (typeof window !== 'undefined' && (window as any)?.api?.backend?.port) || null
+  const chosenBaseURL = isFileProtocol
+    ? (electronPort ? `http://127.0.0.1:${electronPort}` : API_BASE_URL)
+    : ''
 
   logger.log('Creating API client with configuration:', {
     chosenBaseURL,
