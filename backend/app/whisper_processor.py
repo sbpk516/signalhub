@@ -157,14 +157,6 @@ class WhisperProcessor:
                     "error": error_msg,
                     "transcription_timestamp": datetime.now().isoformat()
                 }
-            error_msg = "Whisper model not loaded"
-            logger.error(error_msg)
-            return {
-                "audio_path": audio_path,
-                "transcription_success": False,
-                "error": error_msg,
-                "transcription_timestamp": datetime.now().isoformat()
-            }
         
         with PerformanceMonitor("whisper_transcription") as monitor:
             try:

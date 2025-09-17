@@ -5,6 +5,11 @@ const fs = require('fs')
 const http = require('http')
 const net = require('net')
 
+// Ensure ffmpeg/ffprobe are visible when spawned from app (Homebrew paths)
+const HOMEBREW_BIN = '/opt/homebrew/bin'
+const USR_LOCAL_BIN = '/usr/local/bin'
+const withBrewPath = (p) => [HOMEBREW_BIN, USR_LOCAL_BIN, p || ''].filter(Boolean).join(':')
+
 // Read frontend port from root config.js (best-effort)
 function getFrontendPort() {
   try {
@@ -90,7 +95,7 @@ function dataDir() {
 async function startBackendDev() {
   const port = await findPort()
   backendInfo.port = port
-  const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir(), SIGNALHUB_ENABLE_TRANSCRIPTION: '1' }
+  const env = { ...process.env, PATH: withBrewPath(process.env.PATH), SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir(), SIGNALHUB_ENABLE_TRANSCRIPTION: '1' }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
   logLine('spawn_backend_dev', JSON.stringify({ cwd, args, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT, SIGNALHUB_DATA_DIR: env.SIGNALHUB_DATA_DIR } }))
@@ -110,7 +115,7 @@ async function startBackendDev() {
 async function startBackendProd() {
   const port = await findPort()
   backendInfo.port = port
-  const env = { ...process.env, SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir(), SIGNALHUB_ENABLE_TRANSCRIPTION: '1' }
+  const env = { ...process.env, PATH: withBrewPath(process.env.PATH), SIGNALHUB_MODE: 'desktop', SIGNALHUB_PORT: String(port), SIGNALHUB_DATA_DIR: dataDir(), SIGNALHUB_ENABLE_TRANSCRIPTION: '1' }
   const binName = process.platform === 'win32' ? 'signalhub-backend.exe' : 'signalhub-backend'
   const binPath = path.join(process.resourcesPath, 'backend', binName)
   logLine('spawn_backend_prod', JSON.stringify({ binPath, env: { SIGNALHUB_MODE: env.SIGNALHUB_MODE, SIGNALHUB_PORT: env.SIGNALHUB_PORT, SIGNALHUB_DATA_DIR: env.SIGNALHUB_DATA_DIR } }))

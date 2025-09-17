@@ -30,6 +30,7 @@ pyinstaller -y --clean \
   --collect-all torch \
   --collect-all numpy \
   --collect-all tqdm \
+  --collect-all ffmpeg \
   --collect-all pydub \
   --collect-all soundfile \
   --collect-all nltk \
@@ -49,6 +50,7 @@ pyinstaller -y --clean \
   --hidden-import soundfile \
   --hidden-import nltk \
   --hidden-import vaderSentiment \
+  --hidden-import ffmpeg \
   desktop_entry.py
 
 # Move artifact
