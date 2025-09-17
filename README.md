@@ -211,6 +211,23 @@ Notes:
 - On launch, the app spawns the backend binary on `127.0.0.1:<free_port>` and waits for health
 - Data (SQLite DB, uploads, logs) are stored under the OS user data directory (e.g., `~/Library/Application Support/SignalHub`)
 
+#### Prepack sanity check (prevents white screens and missing transcription)
+- `npm run dist` in `desktop/` runs a quick validator before packaging and fails with clear guidance if something is off.
+- It checks:
+  - Frontend build uses relative asset paths (no `/assets` under `file://`).
+  - Backend binary exists at `backend/bin/signalhub-backend` and is executable.
+  - Whisper model exists for offline transcription at `backend/whisper_cache/whisper/*.pt` (e.g., `base.pt`).
+  - `electron-builder.yml` includes both `frontend_dist` and `whisper_cache` in `extraResources`.
+- You can run it manually anytime: `bash scripts/check-prepack.sh`.
+
+#### Offline Whisper model (packaged transcription)
+- To enable transcription without network at runtime, place a model file under `backend/whisper_cache/whisper/`, e.g. `base.pt`.
+- During packaging, this folder is bundled and the app points Whisper’s cache to it automatically.
+- Quick way to prepare locally:
+  1. Pre-download a model once in your venv: `python -c "import whisper; whisper.load_model('base')"`
+  2. Copy the file into the cache folder: `mkdir -p backend/whisper_cache/whisper && cp ~/.cache/whisper/base.pt backend/whisper_cache/whisper/`
+  3. Rebuild: `bash backend/build-backend.sh && cd desktop && npm run dist`
+
 
 ## 📁 **Project Structure**
 
