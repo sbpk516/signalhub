@@ -110,3 +110,6 @@ Ownership & Contact
 - Primary areas: backend/*, frontend/*, desktop/*, docs/*.
 - When unsure, assume approvals are required and ask.
 
+User‑Preferred Plan‑First Flow
+- For a higher‑level, fewer‑prompts experience, follow docs/agenda.agent.md.
+- In short: present options and a recommended plan first; after approval, implement autonomously, validate, report back, and only push once the owner confirms it works.
