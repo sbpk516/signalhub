@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
+import uuid
 import asyncio
 import logging
 import json
