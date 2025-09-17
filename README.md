@@ -195,7 +195,10 @@ What to expect:
 
 Notes:
 - Do not run `scripts/start-all.sh` together with `desktop npm run dev` (both start the frontend dev server). Use backend‑only start.
-- Packaging for production (DMG/NSIS) comes later; API base URL switching for packaged apps will be added in Phase 1 wrap‑up.
+- For packaging (DMG/NSIS), build the renderer with a relative base to avoid blank screens:
+  - `cd frontend && npm run build:electron` (uses `--base=./`)
+  - then `cd ../desktop && npm run dist`
+  - API base URL switching for packaged apps is handled automatically.
 
 
 ## 📁 **Project Structure**

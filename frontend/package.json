@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:safe": "bash ../scripts/frontend-health-check.sh && vite",
     "build": "tsc -b && vite build",
+    "build:electron": "vite build --base=./",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "bash ../scripts/frontend-health-check.sh",
