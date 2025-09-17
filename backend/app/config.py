@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     max_file_size: Union[int, str] = 100 * 1024 * 1024  # 100MB in bytes
     upload_dir: str = "../audio_uploads"  # Overridden in desktop mode
     
+    # Feature Flags
+    # Live/progressive transcription (SSE). Disabled by default for safety.
+    live_transcription: bool = False
+    
     @property
     def max_file_size_bytes(self) -> int:
         """Convert max_file_size to bytes if it's a string."""
@@ -93,6 +97,14 @@ def get_database_url() -> str:
 def get_secret_key() -> str:
     """Get secret key from environment or use default."""
     return os.getenv("SECRET_KEY", settings.secret_key)
+
+
+def is_live_transcription_enabled() -> bool:
+    """Return True if live transcription (SSE) is enabled via env.
+
+    Controlled by SIGNALHUB_LIVE_TRANSCRIPTION=1. Defaults to False.
+    """
+    return os.getenv("SIGNALHUB_LIVE_TRANSCRIPTION", "0") == "1"
 
 
 # Override upload_dir for desktop mode at import-time

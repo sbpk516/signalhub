@@ -1,16 +1,18 @@
 """
 Main FastAPI application for SignalHub.
 """
-from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
+import asyncio
 import logging
 import json
 import os
 
-from .config import settings, get_database_url
+from .config import settings, get_database_url, is_live_transcription_enabled
 from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
 from .upload import upload_audio_file, get_upload_status
@@ -19,6 +21,7 @@ from .pipeline_monitor import pipeline_monitor
 from .debug_utils import debug_helper
 from .nlp_processor import nlp_processor
 from .db_integration import db_integration
+from .live_events import event_bus, sse_format
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -79,6 +82,9 @@ async def startup_event():
         # Create database tables
         create_tables()
         logger.info("Database tables created successfully")
+
+        # Log feature flags
+        logger.info(f"Live transcription (SSE) enabled: {is_live_transcription_enabled()}")
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
@@ -104,11 +110,14 @@ async def health_check():
         db.execute(text("SELECT 1"))
         db.close()
         
-        return {
-            "status": "healthy",
-            "database": "connected",
-            "timestamp": datetime.now().isoformat()
-        }
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "features": {
+            "live_transcription": is_live_transcription_enabled()
+        },
+        "timestamp": datetime.now().isoformat()
+    }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail="Service unhealthy")
@@ -198,6 +207,56 @@ async def get_call_status(call_id: str):
     Returns the current status and metadata for a specific call.
     """
     return await get_upload_status(call_id)
+
+
+# ============================================================================
+# PHASE 0 (Live SSE): Event stream endpoint + mock producer (feature-flagged)
+# ============================================================================
+
+@app.get("/api/v1/transcription/stream")
+async def transcription_stream(call_id: str):
+    """SSE stream of transcription events for a call.
+
+    Requires SIGNALHUB_LIVE_TRANSCRIPTION=1. If disabled, returns 404.
+    """
+    if not is_live_transcription_enabled():
+        raise HTTPException(status_code=404, detail="Live transcription disabled")
+
+    async def event_generator():
+        # Initial ping so clients connect
+        yield sse_format("ping", {"ts": datetime.now().isoformat()})
+        async for evt in event_bus.subscribe(call_id):
+            evt_type = evt.get("type", "partial")
+            yield sse_format(evt_type, evt)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/v1/transcription/mock/start")
+async def transcription_mock_start(call_id: str, background: BackgroundTasks, chunks: int = 5, interval_ms: int = 800):
+    """Start a mock producer that emits N partial events + complete for demo/testing.
+
+    Only active when SIGNALHUB_LIVE_TRANSCRIPTION=1.
+    """
+    if not is_live_transcription_enabled():
+        raise HTTPException(status_code=404, detail="Live transcription disabled")
+
+    async def producer():
+        try:
+            for i in range(chunks):
+                await asyncio.sleep(max(0, interval_ms) / 1000.0)
+                text = f" partial-{i+1}"
+                await event_bus.publish(call_id, {
+                    "type": "partial",
+                    "chunk_index": i,
+                    "text": text,
+                })
+            await event_bus.complete(call_id)
+        except Exception as e:
+            logger.error(f"mock_producer error: {e}")
+
+    background.add_task(producer)
+    return {"status": "started", "call_id": call_id, "chunks": chunks, "interval_ms": interval_ms}
 
 
 # ============================================================================
