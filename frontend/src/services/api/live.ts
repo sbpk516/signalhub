@@ -16,6 +16,8 @@ export function useTranscriptionStream(callId: string | null) {
   const [completed, setCompleted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
+  const [events, setEvents] = useState<number>(0)
+  const [partials, setPartials] = useState<number>(0)
   const seen = useRef<Set<number>>(new Set())
   const esRef = useRef<EventSource | null>(null)
 
@@ -25,6 +27,8 @@ export function useTranscriptionStream(callId: string | null) {
     setCompleted(false)
     setError(null)
     setProgress(null)
+    setEvents(0)
+    setPartials(0)
     seen.current = new Set()
 
     // Compute backend base similarly to axios client
@@ -44,8 +48,10 @@ export function useTranscriptionStream(callId: string | null) {
           if (idx >= 0 && !seen.current.has(idx)) {
             seen.current.add(idx)
             if (payload.text) setText(prev => (prev ? prev + ' ' : '') + payload.text)
+            setPartials(prev => prev + 1)
           }
         } catch (_) { /* ignore parse errors */ }
+        setEvents(prev => prev + 1)
       }
       const onMessage = onPartial // default events treated as partials
       const onProgress = (e: MessageEvent) => {
@@ -73,6 +79,5 @@ export function useTranscriptionStream(callId: string | null) {
     }
   }, [callId])
 
-  return { text, completed, error, progress }
+  return { text, completed, error, progress, events, partials }
 }
-

@@ -227,11 +227,13 @@ async def transcription_stream(call_id: str):
         raise HTTPException(status_code=404, detail="Live transcription disabled")
 
     async def event_generator():
+        logger.info(f"[SSE] stream open for call_id/session_id={call_id}")
         # Initial ping so clients connect
         yield sse_format("ping", {"ts": datetime.now().isoformat()})
         async for evt in event_bus.subscribe(call_id):
             evt_type = evt.get("type", "partial")
             yield sse_format(evt_type, evt)
+        logger.info(f"[SSE] stream closing for call_id/session_id={call_id}")
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -349,6 +351,7 @@ async def live_start():
     if not is_live_mic_enabled():
         raise HTTPException(status_code=404, detail="Live mic disabled")
     sess = live_sessions.start()
+    logger.info(f"[MIC] start session_id={sess.session_id}")
     return {"session_id": sess.session_id}
 
 
@@ -368,14 +371,17 @@ async def live_chunk(session_id: str, file: UploadFile = File(...)):
         with open(raw_path, 'wb') as f:
             f.write(content)
         idx = live_sessions.add_raw_chunk(session_id, raw_path)
+        logger.info(f"[MIC] chunk received session_id={session_id} idx={idx} size={len(content)}B path={raw_path}")
 
         # Convert to wav mono 16k for Whisper
         converted = audio_processor.convert_audio_format(str(sess.chunks[idx]), output_format="wav", sample_rate=16000, channels=1)
         wav_path = converted.get("output_path") if converted.get("conversion_success") else str(sess.chunks[idx])
+        logger.info(f"[MIC] chunk convert session_id={session_id} idx={idx} converted={converted.get('conversion_success')} wav={wav_path}")
 
         # Transcribe this chunk
         part = whisper_processor.transcribe_audio(wav_path)
         text = part.get("text", "") if part.get("transcription_success") else ""
+        logger.info(f"[MIC] chunk transcribed session_id={session_id} idx={idx} text_len={len(text)}")
         live_sessions.set_partial(session_id, idx, text)
 
         # Emit SSE partial under the same stream (session_id acts as call_id)
@@ -389,7 +395,7 @@ async def live_chunk(session_id: str, file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"live_chunk failed: {e}")
+        logger.error(f"[MIC] live_chunk failed session_id={session_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -399,13 +405,32 @@ async def live_stop(session_id: str):
         raise HTTPException(status_code=404, detail="Live mic disabled")
     try:
         out = live_sessions.stop(session_id)
+        logger.info(f"[MIC] stop session_id={session_id} final_text_len={len(out.get('final_text') or '')}")
         await event_bus.complete(session_id)
         return {"session_id": session_id, "final_text": out.get("final_text", "")}
     except KeyError:
         raise HTTPException(status_code=404, detail="session not found")
     except Exception as e:
-        logger.error(f"live_stop failed: {e}")
+        logger.error(f"[MIC] live_stop failed session_id={session_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/live/debug/session")
+async def live_debug_session(session_id: str):
+    """Debug endpoint: inspect a live session's internal state (counts, snippets)."""
+    if not is_live_mic_enabled():
+        raise HTTPException(status_code=404, detail="Live mic disabled")
+    sess = live_sessions.get(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="session not found")
+    partials = sess.partials or []
+    return {
+        "session_id": session_id,
+        "chunks_count": len(sess.chunks),
+        "partials_count": len(partials),
+        "partials_lens": [len(p or '') for p in partials],
+        "last_partial_preview": (partials[-1][:60] if partials and partials[-1] else ""),
+    }
 
 
 @app.get("/api/v1/monitor/active")

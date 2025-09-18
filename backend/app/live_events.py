@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import deque
 from typing import Any, AsyncGenerator, Deque, Dict, Optional
 
@@ -20,6 +21,7 @@ class TranscriptionEventBus:
         self._buffers: Dict[str, Deque[Dict[str, Any]]] = {}
         self._buffer_size = buffer_size
         self._locks: Dict[str, asyncio.Lock] = {}
+        self._logger = logging.getLogger('signalhub.live_events')
 
     def _ensure(self, call_id: str) -> None:
         if call_id not in self._queues:
@@ -37,10 +39,15 @@ class TranscriptionEventBus:
         # Append to buffer
         async with self._locks[call_id]:
             self._buffers[call_id].append(data)
+        # Debug log (avoid large payloads)
+        etype = data.get("type") or "partial"
+        clen = len(data.get("text", "")) if isinstance(data.get("text"), str) else 0
+        self._logger.debug(f"publish[{call_id}] type={etype} chunk_index={data.get('chunk_index')} text_len={clen}")
 
     async def complete(self, call_id: str) -> None:
         """Publish a terminal completion event and cleanup soon after."""
         await self.publish(call_id, {"type": "complete"})
+        self._logger.info(f"complete[{call_id}] emitted")
 
     def get_buffer(self, call_id: str) -> Deque[Dict[str, Any]]:
         self._ensure(call_id)
@@ -49,6 +56,7 @@ class TranscriptionEventBus:
     async def subscribe(self, call_id: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Async generator yielding buffered events first, then live events."""
         self._ensure(call_id)
+        self._logger.info(f"subscribe[{call_id}] opened")
         # Yield buffered events first (snapshot to avoid holding lock)
         async with self._locks[call_id]:
             snapshot = list(self._buffers[call_id])
@@ -60,9 +68,11 @@ class TranscriptionEventBus:
             try:
                 evt = await queue.get()
             except asyncio.CancelledError:
+                self._logger.info(f"subscribe[{call_id}] cancelled")
                 break
             yield evt
             if evt.get("type") == "complete":
+                self._logger.info(f"subscribe[{call_id}] complete seen; closing")
                 break
 
 
@@ -81,4 +91,3 @@ def sse_format(event_type: Optional[str], data: Dict[str, Any]) -> str:
     # End of message
     lines.append("")
     return "\n".join(lines) + "\n"
-

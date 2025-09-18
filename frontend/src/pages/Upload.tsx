@@ -396,7 +396,7 @@ function LiveMicPanel() {
   const [error, setError] = useState<string | null>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const { text, completed } = useTranscriptionStream(sessionId)
+  const { text, completed, error: sseError, events, partials } = useTranscriptionStream(sessionId)
 
   const start = useCallback(async () => {
     try {
@@ -468,6 +468,10 @@ function LiveMicPanel() {
         )}
       </div>
       {error && <div className="text-xs text-red-700 mb-2">{error}</div>}
+      {sseError && <div className="text-xs text-red-700 mb-2">SSE error: {sseError}</div>}
+      {sessionId && (
+        <div className="text-xs text-gray-500 mb-1">Events: {events} • Partials: {partials}</div>
+      )}
       <div className="text-sm text-gray-800 whitespace-pre-wrap min-h-[2rem]">
         {text || (recording ? 'Listening…' : 'Press Record to start')}
       </div>
