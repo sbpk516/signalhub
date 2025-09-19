@@ -487,8 +487,22 @@ class AudioProcessingPipeline:
                 )
             else:
                 # Transcribe audio with retry logic (batch)
+                # Convert to mono 16k WAV first for reliability on short/varied clips
+                try:
+                    conv = self.audio_processor.convert_audio_format(
+                        audio_path,
+                        output_format="wav",
+                        sample_rate=16000,
+                        channels=1,
+                    )
+                    wav_path = conv.get("output_path") if conv.get("conversion_success") else audio_path
+                    logger.info(f"Using path for transcription: {wav_path} (converted={conv.get('conversion_success')})")
+                except Exception as _e:
+                    wav_path = audio_path
+                    logger.warning(f"Audio conversion before transcription failed; proceeding with original: {audio_path}")
+
                 transcription_result = await self._retry_operation(
-                    lambda: self.whisper_processor.transcribe_audio(audio_path),
+                    lambda: self.whisper_processor.transcribe_audio(wav_path),
                     operation_name="transcription",
                     max_retries=2
                 )

@@ -159,17 +159,38 @@ backend/debug_logs/
 # Built backend binaries (do not commit)
 backend/bin/
 backend/whisper_cache/
+backend/build/
+backend/dist/
+backend/logs/
+backend/audio_uploads/
+
+# Desktop Electron build artifacts (do not commit)
+desktop/node_modules/
+desktop/dist/
+desktop/*.zip
+desktop/*.dmg
+desktop/*.blockmap
 
 # Test files (Local only)
 test_*.py
 check_*.py
 *.aiff
 *.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.aac
 sample_*.wav
 speech_*.wav
 complaint.*
 sales_*.wav
 support_*.wav
+
+# Local runtime data (desktop mode)
+signalhub_data/
+.tmp_*/
+.tmp_live*/
 
 # Frontend specific
 frontend/node_modules/

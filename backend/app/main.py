@@ -498,7 +498,13 @@ async def reanalyze_call(call_id: str, db: Session = Depends(get_db)):
         # Get transcript text
         transcript_record = db.query(Transcript).filter(Transcript.call_id == call_id).first()
         if not transcript_record or not (transcript_record.text or '').strip():
-            raise HTTPException(status_code=400, detail="No transcript available for this call")
+            # Return a friendly 200 response instead of 400 for empty transcripts
+            return {
+                "message": "No transcript available",
+                "call_id": call_id,
+                "analysis": None,
+                "timestamp": datetime.now().isoformat()
+            }
 
         text = transcript_record.text
         logger.info(f"[REANALYZE] Transcript loaded (len={len(text)}) for call {call_id}")

@@ -30,6 +30,23 @@ def _transcription_enabled() -> bool:
     return os.getenv("SIGNALHUB_ENABLE_TRANSCRIPTION", "0") == "1"
 
 
+def _forced_language() -> Optional[str]:
+    """Determine if we should force a language.
+
+    Returns a language code (e.g., 'en') if forcing is enabled, otherwise None.
+    Policy:
+    - If SIGNALHUB_FORCE_LANGUAGE is set (e.g., 'en'), use it.
+    - Else, when running in desktop mode, default to 'en' to improve
+      reliability for short/clean English clips without network.
+    """
+    env_lang = (os.getenv("SIGNALHUB_FORCE_LANGUAGE") or "").strip()
+    if env_lang:
+        return env_lang
+    if os.getenv("SIGNALHUB_MODE", "").lower() == "desktop":
+        return "en"
+    return None
+
+
 class WhisperProcessor:
     """
     Handles speech-to-text processing using OpenAI Whisper.
@@ -166,15 +183,28 @@ class WhisperProcessor:
                     raise FileNotFoundError(f"Audio file not found: {audio_path}")
                 
                 # Prepare transcription options
-                options = {
+                # Build options with conservative settings for short clips
+                # and offline packaging scenarios.
+                options: Dict[str, Any] = {
                     "task": task,
                     "verbose": verbose,
-                    "fp16": False  # Disable fp16 for better compatibility
+                    "fp16": False,                 # Better CPU compatibility
+                    "temperature": 0.0,            # Deterministic decoding
+                    "condition_on_previous_text": False,
+                    # Lower the speech/no-speech threshold a bit to avoid
+                    # empty outputs on short/quiet samples.
+                    "no_speech_threshold": 0.3,
                 }
-                
-                if language:
-                    options["language"] = language
-                    logger.info(f"Using specified language: {language}")
+
+                # Apply language selection: prefer explicit arg, else forced policy
+                forced_lang = _forced_language()
+                lang_to_use = language or forced_lang
+                if lang_to_use:
+                    options["language"] = lang_to_use
+                    if language:
+                        logger.info(f"Using specified language: {lang_to_use}")
+                    else:
+                        logger.info(f"Forcing language via policy: {lang_to_use}")
                 else:
                     logger.info("Auto-detecting language")
                 
@@ -302,13 +332,18 @@ class WhisperProcessor:
         idx = 0
         start = 0.0
         final_text_parts: List[str] = []
-        options = {
+        options: Dict[str, Any] = {
             "task": task,
             "verbose": False,
             "fp16": False,
+            "temperature": 0.0,
+            "condition_on_previous_text": False,
+            "no_speech_threshold": 0.3,
         }
-        if language:
-            options["language"] = language
+        forced_lang = _forced_language()
+        lang_to_use = language or forced_lang
+        if lang_to_use:
+            options["language"] = lang_to_use
 
         while True:
             end = start + float(chunk_sec)
@@ -320,8 +355,7 @@ class WhisperProcessor:
             # Extract segment
             seg = audio_processor.extract_audio_segment(audio_path, start_time=start, duration=duration, output_format="wav")
             if not seg.get("extraction_success"):
-                logger.warning(f"Chunk extraction failed at {start}s: {seg.get('error')}
-")
+                logger.warning(f"Chunk extraction failed at {start}s: {seg.get('error')}")
                 break
             seg_path = seg["output_path"]
             # Transcribe segment

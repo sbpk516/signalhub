@@ -51,10 +51,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       // Retry /health briefly on app start to avoid initial network race
       const maxAttempts = 10
       const delayMs = 300
+      const isFileProtocol = typeof window !== 'undefined' && window.location?.protocol === 'file:'
+      const electronPort = (typeof window !== 'undefined' && (window as any)?.api?.backend?.port) || null
+      const healthUrl = isFileProtocol && electronPort
+        ? `http://127.0.0.1:${electronPort}/health`
+        : '/health'
       for (let i = 0; i < maxAttempts; i++) {
         try {
           // use raw fetch to avoid axios interceptors changing behavior
-          const res = await fetch('/health', { method: 'GET' })
+          const res = await fetch(healthUrl, { method: 'GET' })
           if (res.ok) return true
         } catch (_) {}
         await new Promise(r => setTimeout(r, delayMs))
