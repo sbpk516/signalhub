@@ -219,3 +219,9 @@ frontend/.swc/
 # Cursor AI Development Files (Local only)
 CURSOR_INSTRUCTIONS.md
 DEVELOPMENT_GUIDELINES.md
+
+# Documentation files (Local only)
+AGENTS.md
+README.md
+*.md
+docs/journal/
