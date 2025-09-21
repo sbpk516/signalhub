@@ -233,6 +233,23 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     }
   }, [files, pollFileStatus, updateFiles, fetchUploadedTranscript])
 
+  // Check for files that have been processing too long (timeout)
+  const checkProcessingTimeouts = useCallback(() => {
+    const now = Date.now()
+    const timeoutMs = 10 * 60 * 1000 // 10 minutes timeout
+    
+    updateFiles(prev => prev.map(f => {
+      if (f.status === 'processing' && f.uploadedAt) {
+        const processingTime = now - new Date(f.uploadedAt).getTime()
+        if (processingTime > timeoutMs) {
+          console.log(`[CAPTURE] File ${f.name} timed out after ${Math.round(processingTime / 1000 / 60)} minutes`)
+          return { ...f, status: 'error', error: 'Processing timed out (10+ minutes)' }
+        }
+      }
+      return f
+    }))
+  }, [updateFiles])
+
   // Cycle processing label while any file is in 'processing'
   useEffect(() => {
     const anyProcessing = files.some(f => f.status === 'processing')
@@ -259,6 +276,15 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       console.log(`[CAPTURE] Restored ${storedFiles.length} files from storage`)
     }
   }, [loadFilesFromStorage])
+
+  // Check for processing timeouts every minute
+  useEffect(() => {
+    const timeoutInterval = setInterval(() => {
+      checkProcessingTimeouts()
+    }, 60000) // Check every minute
+
+    return () => clearInterval(timeoutInterval)
+  }, [checkProcessingTimeouts])
 
   // Polling mechanism for processing files
   useEffect(() => {
