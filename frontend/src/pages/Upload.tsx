@@ -665,16 +665,9 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                           </div>
                         )}
 
-                        {/* Processing indicator */}
-                        {file.status === 'processing' && (
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
-                            <span>{processingLabel}</span>
-                          </div>
-                        )}
 
                         {/* Status badge */}
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           file.status === 'completed' ? 'bg-green-100 text-green-800' :
                           file.status === 'uploading' ? 'bg-blue-100 text-blue-800' :
                           file.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
@@ -683,7 +676,12 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                         }`}>
                           {file.status === 'completed' ? '✅ Completed' : 
                            file.status === 'uploading' ? `🔼 Uploading ${file.progress}%` : 
-                           file.status === 'processing' ? `🔄 ${processingLabel}` : 
+                           file.status === 'processing' ? (
+                             <>
+                               <span className="inline-block w-3 h-3 rounded-full border-2 border-yellow-600 border-t-transparent animate-spin"></span>
+                               {processingLabel}
+                             </>
+                           ) : 
                            file.status === 'error' ? '❌ Error' : '⏳ Pending'}
                         </span>
 
