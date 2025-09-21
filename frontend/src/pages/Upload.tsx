@@ -33,6 +33,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [liveError, setLiveError] = useState<string | null>(null)
   const [uploadedCallId, setUploadedCallId] = useState<string | null>(null)
   const [copied, setCopied] = useState<boolean>(false)
+  const [newlyCompleted, setNewlyCompleted] = useState<string[]>([])
 
   // LocalStorage functions for state persistence
   const STORAGE_KEY = 'signalhub_upload_files'
@@ -56,8 +57,29 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
         const files = JSON.parse(stored)
-        console.log(`[CAPTURE] Loaded ${files.length} files from storage`)
-        return files
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+        
+        // Keep only recent files or processing files
+        const filteredFiles = files.filter((f: UploadFile) => {
+          // Always keep processing files
+          if (f.status === 'processing') return true
+          
+          // Keep completed files that are less than 24 hours old
+          if (f.uploadedAt && new Date(f.uploadedAt) > oneDayAgo) return true
+          
+          // Remove old completed files
+          return false
+        })
+        
+        // Update storage if we filtered out any files
+        if (filteredFiles.length !== files.length) {
+          const removedCount = files.length - filteredFiles.length
+          console.log(`[CAPTURE] Cleaned up ${removedCount} old files from storage`)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredFiles))
+        }
+        
+        console.log(`[CAPTURE] Loaded ${filteredFiles.length} files from storage`)
+        return filteredFiles
       }
     } catch (error) {
       console.error('[CAPTURE] Failed to load files from storage:', error)
@@ -228,6 +250,12 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                   ? { ...f, status: 'completed', progress: 100 }
                   : f
               ))
+              // Add to newly completed notifications
+              setNewlyCompleted(prev => [...prev, file.id])
+              // Remove notification after 5 seconds
+              setTimeout(() => {
+                setNewlyCompleted(prev => prev.filter(id => id !== file.id))
+              }, 5000)
             } else if (status.status === 'failed') {
               console.log(`[CAPTURE] File ${file.name} failed processing: ${status.error}`)
               updateFiles(prev => prev.map(f => 
@@ -421,6 +449,26 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
           </p>
         </div>
 
+        {/* Notifications for newly completed files */}
+        {newlyCompleted.length > 0 && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <span className="text-green-400 text-xl mr-3">✅</span>
+              <div>
+                <h3 className="text-sm font-medium text-green-800">
+                  {newlyCompleted.length === 1 ? 'File completed!' : `${newlyCompleted.length} files completed!`}
+                </h3>
+                <p className="text-sm text-green-700 mt-1">
+                  {newlyCompleted.length === 1 
+                    ? 'Your file has finished processing and is ready for download.'
+                    : 'Your files have finished processing and are ready for download.'
+                  }
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Live Mic card */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
@@ -544,12 +592,22 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                         <div className="flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium text-gray-900">{file.name}</span>
+                            {file.uploadedAt && (
+                              <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                                📅 {new Date(file.uploadedAt).toLocaleTimeString()}
+                              </span>
+                            )}
                             {file.status === 'error' && (
                               <span className="text-red-600 text-sm">{file.error}</span>
                             )}
                           </div>
                           <div className="text-sm text-gray-500">
                             {formatFileSize(file.size)} • {file.type}
+                            {file.callId && (
+                              <span className="ml-2 text-xs text-gray-400">
+                                ID: {file.callId.slice(0, 8)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
