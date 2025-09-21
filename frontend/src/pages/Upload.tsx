@@ -203,35 +203,6 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     ))
   }, [updateFiles])
 
-  // Manual refresh for stuck files
-  const refreshFileStatus = useCallback(async (fileId: string) => {
-    const file = files.find(f => f.id === fileId)
-    if (!file || !file.callId) return
-
-    console.log(`[CAPTURE] Manually refreshing status for file: ${file.name}`)
-    try {
-      const status = await pollFileStatus(file.callId)
-      console.log(`[CAPTURE] Manual refresh result for ${file.name}:`, status)
-      
-      if (status.status === 'completed') {
-        updateFiles(prev => prev.map(f => 
-          f.id === fileId 
-            ? { ...f, status: 'completed', progress: 100 }
-            : f
-        ))
-        // Fetch the transcript
-        await fetchUploadedTranscript(file.callId!)
-      } else if (status.status === 'failed') {
-        updateFiles(prev => prev.map(f => 
-          f.id === fileId 
-            ? { ...f, status: 'error', error: status.error || 'Processing failed' }
-            : f
-        ))
-      }
-    } catch (error) {
-      console.error(`[CAPTURE] Manual refresh failed for ${file.name}:`, error)
-    }
-  }, [files, pollFileStatus, updateFiles, fetchUploadedTranscript])
 
   // Check for files that have been processing too long (timeout)
   const checkProcessingTimeouts = useCallback(() => {
@@ -678,7 +649,8 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                         </div>
                       </div>
 
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-2">
+                      <div className="flex items-center gap-3">
+                        {/* Progress indicator for uploading */}
                         {file.status === 'uploading' && (
                           <div className="w-32">
                             <div className="bg-gray-200 rounded-full h-2">
@@ -692,15 +664,16 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                             </div>
                           </div>
                         )}
+
+                        {/* Processing indicator */}
                         {file.status === 'processing' && (
-                          <div className="w-48">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
-                              <span>{processingLabel}</span>
-                            </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
+                            <span>{processingLabel}</span>
                           </div>
                         )}
 
+                        {/* Status badge */}
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           file.status === 'completed' ? 'bg-green-100 text-green-800' :
                           file.status === 'uploading' ? 'bg-blue-100 text-blue-800' :
@@ -716,22 +689,13 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
 
                         {/* Action buttons */}
                         {file.status === 'processing' && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => refreshFileStatus(file.id)}
-                              className="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded border border-blue-300 hover:bg-blue-50 transition-colors"
-                              title="Refresh status"
-                            >
-                              🔄 Refresh
-                            </button>
-                            <button
-                              onClick={() => cancelFileProcessing(file.id)}
-                              className="text-red-600 hover:text-red-800 text-sm px-2 py-1 rounded border border-red-300 hover:bg-red-50 transition-colors"
-                              title="Cancel processing"
-                            >
-                              ⏹️ Cancel
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => cancelFileProcessing(file.id)}
+                            className="text-red-600 hover:text-red-800 text-sm px-3 py-1.5 rounded border border-red-300 hover:bg-red-50 transition-colors"
+                            title="Cancel processing"
+                          >
+                            ⏹️ Cancel
+                          </button>
                         )}
 
                         {file.status !== 'uploading' && file.status !== 'processing' && (
