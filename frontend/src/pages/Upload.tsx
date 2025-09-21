@@ -177,12 +177,12 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       const blob = new Blob([liveTranscript], { type: 'text/plain;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      
+
       // Generate filename based on source and call ID
       const source = liveSource === 'mic' ? 'live-mic' : 'upload'
       const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
       a.download = `${source}-${liveCallId?.slice(0, 8) || timestamp}.txt`
-      
+
       a.href = url
       document.body.appendChild(a)
       a.click()
@@ -192,6 +192,46 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       console.error('Download failed:', error)
     }
   }, [liveTranscript, liveSource, liveCallId])
+
+  // Cancel processing for a specific file
+  const cancelFileProcessing = useCallback((fileId: string) => {
+    console.log(`[CAPTURE] Cancelling processing for file: ${fileId}`)
+    updateFiles(prev => prev.map(f => 
+      f.id === fileId 
+        ? { ...f, status: 'error', error: 'Processing cancelled by user' }
+        : f
+    ))
+  }, [updateFiles])
+
+  // Manual refresh for stuck files
+  const refreshFileStatus = useCallback(async (fileId: string) => {
+    const file = files.find(f => f.id === fileId)
+    if (!file || !file.callId) return
+
+    console.log(`[CAPTURE] Manually refreshing status for file: ${file.name}`)
+    try {
+      const status = await pollFileStatus(file.callId)
+      console.log(`[CAPTURE] Manual refresh result for ${file.name}:`, status)
+      
+      if (status.status === 'completed') {
+        updateFiles(prev => prev.map(f => 
+          f.id === fileId 
+            ? { ...f, status: 'completed', progress: 100 }
+            : f
+        ))
+        // Fetch the transcript
+        await fetchUploadedTranscript(file.callId!)
+      } else if (status.status === 'failed') {
+        updateFiles(prev => prev.map(f => 
+          f.id === fileId 
+            ? { ...f, status: 'error', error: status.error || 'Processing failed' }
+            : f
+        ))
+      }
+    } catch (error) {
+      console.error(`[CAPTURE] Manual refresh failed for ${file.name}:`, error)
+    }
+  }, [files, pollFileStatus, updateFiles, fetchUploadedTranscript])
 
   // Cycle processing label while any file is in 'processing'
   useEffect(() => {
@@ -648,10 +688,31 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
                            file.status === 'error' ? '❌ Error' : '⏳ Pending'}
                         </span>
 
+                        {/* Action buttons */}
+                        {file.status === 'processing' && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => refreshFileStatus(file.id)}
+                              className="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded border border-blue-300 hover:bg-blue-50 transition-colors"
+                              title="Refresh status"
+                            >
+                              🔄 Refresh
+                            </button>
+                            <button
+                              onClick={() => cancelFileProcessing(file.id)}
+                              className="text-red-600 hover:text-red-800 text-sm px-2 py-1 rounded border border-red-300 hover:bg-red-50 transition-colors"
+                              title="Cancel processing"
+                            >
+                              ⏹️ Cancel
+                            </button>
+                          </div>
+                        )}
+
                         {file.status !== 'uploading' && file.status !== 'processing' && (
                           <button
                             onClick={() => removeFile(file.id)}
                             className="text-red-600 hover:text-red-800"
+                            title="Remove file"
                           >
                             🗑️
                           </button>
