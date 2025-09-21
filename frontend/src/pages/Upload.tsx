@@ -12,6 +12,8 @@ interface UploadFile {
   progress: number
   error?: string
   file?: File
+  callId?: string
+  uploadedAt?: string
 }
 
 interface CaptureProps {
@@ -31,6 +33,73 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [liveError, setLiveError] = useState<string | null>(null)
   const [uploadedCallId, setUploadedCallId] = useState<string | null>(null)
   const [copied, setCopied] = useState<boolean>(false)
+
+  // LocalStorage functions for state persistence
+  const STORAGE_KEY = 'signalhub_upload_files'
+  
+  const saveFilesToStorage = useCallback((files: UploadFile[]) => {
+    try {
+      // Filter out File objects (can't be serialized)
+      const serializableFiles = files.map(f => ({
+        ...f,
+        file: undefined // Remove File object
+      }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableFiles))
+      console.log(`[CAPTURE] Saved ${files.length} files to storage`)
+    } catch (error) {
+      console.error('[CAPTURE] Failed to save files to storage:', error)
+    }
+  }, [])
+
+  const loadFilesFromStorage = useCallback((): UploadFile[] => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const files = JSON.parse(stored)
+        console.log(`[CAPTURE] Loaded ${files.length} files from storage`)
+        return files
+      }
+    } catch (error) {
+      console.error('[CAPTURE] Failed to load files from storage:', error)
+    }
+    return []
+  }, [])
+
+  // Wrapper function for setFiles that also saves to storage
+  const updateFiles = useCallback((updater: (prev: UploadFile[]) => UploadFile[]) => {
+    setFiles(prev => {
+      const newFiles = updater(prev)
+      saveFilesToStorage(newFiles)
+      return newFiles
+    })
+  }, [saveFilesToStorage])
+
+  // Poll backend for file processing status
+  const pollFileStatus = useCallback(async (callId: string): Promise<{
+    status: 'processing' | 'completed' | 'failed'
+    progress?: number
+    error?: string
+  }> => {
+    try {
+      console.log(`[CAPTURE] Polling status for call_id: ${callId}`)
+      const response = await apiClient.get(`/api/v1/pipeline/results/${callId}`)
+      const data = response.data.data
+      
+      if (data.status === 'completed') {
+        console.log(`[CAPTURE] File ${callId} completed processing`)
+        return { status: 'completed' }
+      } else if (data.status === 'failed') {
+        console.log(`[CAPTURE] File ${callId} failed processing`)
+        return { status: 'failed', error: data.error || 'Processing failed' }
+      } else {
+        console.log(`[CAPTURE] File ${callId} still processing`)
+        return { status: 'processing' }
+      }
+    } catch (error) {
+      console.error(`[CAPTURE] Failed to poll status for ${callId}:`, error)
+      return { status: 'processing' } // Assume still processing on error
+    }
+  }, [])
 
   // Fetch transcript for uploaded file
   const fetchUploadedTranscript = useCallback(async (callId: string) => {
@@ -120,6 +189,68 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     }
   }, [uploadedCallId, fetchUploadedTranscript])
 
+  // Load files from storage on component mount
+  useEffect(() => {
+    const storedFiles = loadFilesFromStorage()
+    if (storedFiles.length > 0) {
+      setFiles(storedFiles)
+      console.log(`[CAPTURE] Restored ${storedFiles.length} files from storage`)
+    }
+  }, [loadFilesFromStorage])
+
+  // Polling mechanism for processing files
+  useEffect(() => {
+    const processingFiles = files.filter(f => 
+      f.status === 'processing' && f.callId
+    )
+    
+    if (processingFiles.length === 0) {
+      console.log(`[CAPTURE] No files to poll`)
+      return
+    }
+
+    console.log(`[CAPTURE] Starting polling for ${processingFiles.length} files:`, 
+      processingFiles.map(f => ({ id: f.id, callId: f.callId, name: f.name }))
+    )
+
+    const pollInterval = setInterval(async () => {
+      console.log(`[CAPTURE] Polling ${processingFiles.length} processing files...`)
+      
+      for (const file of processingFiles) {
+        if (file.callId) {
+          try {
+            const status = await pollFileStatus(file.callId)
+            
+            if (status.status === 'completed') {
+              console.log(`[CAPTURE] File ${file.name} completed processing`)
+              updateFiles(prev => prev.map(f => 
+                f.id === file.id 
+                  ? { ...f, status: 'completed', progress: 100 }
+                  : f
+              ))
+            } else if (status.status === 'failed') {
+              console.log(`[CAPTURE] File ${file.name} failed processing: ${status.error}`)
+              updateFiles(prev => prev.map(f => 
+                f.id === file.id 
+                  ? { ...f, status: 'error', error: status.error }
+                  : f
+              ))
+            } else {
+              console.log(`[CAPTURE] File ${file.name} still processing`)
+            }
+          } catch (error) {
+            console.error(`[CAPTURE] Error polling file ${file.name}:`, error)
+          }
+        }
+      }
+    }, 5000) // Poll every 5 seconds
+
+    return () => {
+      console.log(`[CAPTURE] Stopping polling for ${processingFiles.length} files`)
+      clearInterval(pollInterval)
+    }
+  }, [files, pollFileStatus, updateFiles])
+
   const processingLabel = processingStages[processingTick]
 
   // Handle file selection
@@ -133,11 +264,12 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       type: file.type,
       status: 'pending',
       progress: 0,
-      file
+      file,
+      uploadedAt: new Date().toISOString()
     }))
 
-    setFiles(prev => [...prev, ...newFiles])
-  }, [])
+    updateFiles(prev => [...prev, ...newFiles])
+  }, [updateFiles])
 
   // Handle drag and drop
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -169,7 +301,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       setUploading(true)
       
       // Update status to uploading
-      setFiles(prev => prev.map(f => 
+      updateFiles(prev => prev.map(f => 
         f.id === file.id 
           ? { ...f, status: 'uploading', progress: 0 }
           : f
@@ -202,11 +334,11 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
           const pct = total ? Math.min(100, Math.round((loaded / total) * 100)) : loaded ? 100 : 0
           // Debug log to verify progress events
           if (pct % 10 === 0) console.log(`[CAPTURE] Progress ${pct}% (${loaded}/${total})`)
-          setFiles(prev => prev.map(f => f.id === file.id ? { ...f, progress: pct } : f))
+          updateFiles(prev => prev.map(f => f.id === file.id ? { ...f, progress: pct } : f))
           if (pct >= 100 && !uploadFinished) {
             uploadFinished = true
             // Show processing state while awaiting server-side pipeline
-            setFiles(prev => prev.map(f => f.id === file.id ? { ...f, status: 'processing' } : f))
+            updateFiles(prev => prev.map(f => f.id === file.id ? { ...f, status: 'processing' } : f))
           }
         }
       })
@@ -225,9 +357,9 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       }
 
       // Update file status to completed
-      setFiles(prev => prev.map(f => 
+      updateFiles(prev => prev.map(f => 
         f.id === file.id 
-          ? { ...f, status: 'completed', progress: 100 }
+          ? { ...f, status: 'completed', progress: 100, callId }
           : f
       ))
 
@@ -244,7 +376,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     } catch (error) {
       console.error(`[CAPTURE] Error uploading ${file.name}:`, error)
       
-      setFiles(prev => prev.map(f => 
+      updateFiles(prev => prev.map(f => 
         f.id === file.id 
           ? { 
               ...f, 
@@ -270,12 +402,12 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
 
   // Clear completed files
   const clearCompleted = () => {
-    setFiles(prev => prev.filter(f => f.status !== 'completed'))
+    updateFiles(prev => prev.filter(f => f.status !== 'completed'))
   }
 
   // Remove file
   const removeFile = (fileId: string) => {
-    setFiles(prev => prev.filter(f => f.id !== fileId))
+    updateFiles(prev => prev.filter(f => f.id !== fileId))
   }
 
   return (
