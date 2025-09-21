@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import { Card } from '../components/Shared'
 import { API_ENDPOINTS, API_BASE_URL, UI_CONFIG } from '../types/constants'
 import { apiClient } from '@/services/api/client'
 // Live batch mode: final transcript only; no SSE stream
@@ -188,189 +187,216 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Capture Audio</h1>
-        <p className="text-gray-600 max-w-2xl mx-auto">
-          Record live or import existing audio for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#f4f6fb]">
+      <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+        {/* Header */}
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 text-3xl mb-4">🎧</div>
+          <h1 className="text-4xl font-semibold text-gray-900 mb-3">Capture Audio</h1>
+          <p className="text-gray-600 text-base max-w-2xl mx-auto">
+            Record live or import existing audio for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
+          </p>
+        </div>
 
-      {/* Capture Zone */}
-      <Card>
-        <div className="space-y-6">
-          {/* Drag & Drop Zone */}
-          <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              isDragOver
-                ? 'border-blue-400 bg-blue-50'
-                : 'border-gray-300 hover:border-gray-400'
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <div className="text-6xl mb-4">🎵</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Drop audio files here, or click to browse
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Drag and drop your audio files, or click the button below to select files
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Live Mic card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                <span role="img" aria-hidden>🎤</span> Live Mic
+              </h2>
+              <span className="text-xs font-semibold uppercase tracking-wide bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                Beta
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Capture ad-hoc audio directly from your browser. Start and stop to generate transcripts instantly.
             </p>
-            
-            <input
-              id="file-input"
-              type="file"
-              multiple
-              accept="audio/*"
-              onChange={(e) => handleFileSelect(e.target.files)}
-              className="hidden"
-            />
-            
-            <button
-              onClick={() => document.getElementById('file-input')?.click()}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              📁 Choose Files
-            </button>
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 mb-6">
+              <LiveMicPanel onNavigate={onNavigate} />
+            </div>
+            <div className="text-sm text-blue-700 bg-blue-100 border border-blue-200 rounded-xl px-4 py-3">
+              <strong>Tip:</strong> Keep the browser tab focused while recording for best results. You can view the finished transcript in the Transcripts tab.
+            </div>
           </div>
 
-          {/* File List */}
-          {files.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Selected Files ({files.length})
-                </h3>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={startUpload}
-                    disabled={uploading || !files.some(f => f.status === 'pending')}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                  >
-                    🚀 Process Files
-                  </button>
-                  <button
-                    onClick={clearCompleted}
-                    disabled={!files.some(f => f.status === 'completed')}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
-                  >
-                    🗑️ Clear Completed
-                  </button>
-                </div>
-              </div>
+          {/* Import card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 flex flex-col gap-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Import Audio Files</h2>
+              <p className="text-sm text-gray-600">
+                Upload existing audio files for transcription and analysis.
+              </p>
+            </div>
 
-              <div className="space-y-3">
-                {files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-                  >
-                    <div className="flex items-center space-x-4 flex-1">
+            <div
+              className={`rounded-2xl border-2 border-dashed text-center p-10 transition-all ${
+                isDragOver ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-300'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <div className="text-5xl mb-4 text-blue-500">🎶</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Drop audio files here, or click to browse
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Drag and drop your audio files, or click the button below to select files
+              </p>
+              <input
+                id="file-input"
+                type="file"
+                multiple
+                accept="audio/*"
+                onChange={(e) => handleFileSelect(e.target.files)}
+                className="hidden"
+              />
+              <button
+                onClick={() => document.getElementById('file-input')?.click()}
+                className="inline-flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all"
+              >
+                <span className="text-lg">⬆️</span>
+                Choose Files
+              </button>
+            </div>
+
+            {files.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Selected Files ({files.length})
+                  </h3>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={startUpload}
+                      disabled={uploading || !files.some(f => f.status === 'pending')}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    >
+                      🚀 Process Files
+                    </button>
+                    <button
+                      onClick={clearCompleted}
+                      disabled={!files.some(f => f.status === 'completed')}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      🗑️ Clear Completed
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {files.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-gray-50 rounded-xl"
+                    >
+                      <div className="flex items-center space-x-4 flex-1">
                         <div className="text-2xl">
                           {file.status === 'completed' ? '✅' : 
                            file.status === 'uploading' ? '🔼' : 
                            file.status === 'processing' ? '🔄' :
                            file.status === 'error' ? '❌' : '📁'}
                         </div>
-                      
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium text-gray-900">{file.name}</span>
-                          {file.status === 'error' && (
-                            <span className="text-red-600 text-sm">{file.error}</span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {formatFileSize(file.size)} • {file.type}
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-gray-900">{file.name}</span>
+                            {file.status === 'error' && (
+                              <span className="text-red-600 text-sm">{file.error}</span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {formatFileSize(file.size)} • {file.type}
+                          </div>
                         </div>
                       </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-2">
+                        {file.status === 'uploading' && (
+                          <div className="w-32">
+                            <div className="bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${file.progress}%` }}
+                              ></div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1 text-center">
+                              {file.progress}%
+                            </div>
+                          </div>
+                        )}
+                        {file.status === 'processing' && (
+                          <div className="w-48">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
+                              <span>{processingLabel}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          file.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          file.status === 'uploading' ? 'bg-blue-100 text-blue-800' :
+                          file.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
+                          file.status === 'error' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {file.status === 'completed' ? '✅ Completed' : 
+                           file.status === 'uploading' ? `🔼 Uploading ${file.progress}%` : 
+                           file.status === 'processing' ? `🔄 ${processingLabel}` : 
+                           file.status === 'error' ? '❌ Error' : '⏳ Pending'}
+                        </span>
+
+                        {file.status !== 'uploading' && file.status !== 'processing' && (
+                          <button
+                            onClick={() => removeFile(file.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </div>
-
-                    <div className="flex items-center space-x-4">
-                      {/* Progress Bar */}
-                      {file.status === 'uploading' && (
-                        <div className="w-32">
-                          <div className="bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${file.progress}%` }}
-                            ></div>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1 text-center">
-                            {file.progress}%
-                          </div>
-                        </div>
-                      )}
-                      {file.status === 'processing' && (
-                        <div className="w-48">
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin"></span>
-                            <span>{processingLabel}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Status Badge */}
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        file.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        file.status === 'uploading' ? 'bg-blue-100 text-blue-800' :
-                        file.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
-                        file.status === 'error' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {file.status === 'completed' ? '✅ Completed' : 
-                         file.status === 'uploading' ? `🔼 Uploading ${file.progress}%` : 
-                         file.status === 'processing' ? `🔄 ${processingLabel}` : 
-                         file.status === 'error' ? '❌ Error' : '⏳ Pending'}
-                      </span>
-
-                      {/* Remove Button */}
-                      {file.status !== 'uploading' && file.status !== 'processing' && (
-                        <button
-                          onClick={() => removeFile(file.id)}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          🗑️
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Instructions */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 mb-2">📋 Capture Guidelines</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Supported formats: WAV, MP3, M4A, FLAC</li>
-              <li>• Maximum file size: 100MB</li>
-              <li>• Files are automatically processed after capture</li>
-              <li>• Check the Transcripts page to view processing status</li>
-              <li>• Processing time depends on file length and complexity</li>
-            </ul>
-          </div>
-
-          {/* Live Mic (beta) */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h4 className="font-medium text-yellow-900 mb-2">🎤 Live Mic (beta)</h4>
-            <LiveMicPanel onNavigate={onNavigate} />
-          </div>
-
-          {/* Return to Dashboard Button */}
-          <div className="text-center pt-4">
-            <button
-              onClick={() => onUploadComplete && onUploadComplete()}
-              className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              🏠 Return to Dashboard
-            </button>
+            )}
           </div>
         </div>
-      </Card>
+
+        {/* Guidelines */}
+        <div className="bg-[#e9f0ff] border border-blue-100 rounded-2xl p-6 md:p-8 space-y-6 lg:col-span-2">
+          <div className="flex items-center gap-2 text-blue-600 text-lg font-semibold">
+            📘 Capture Guidelines
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 text-sm text-blue-800">
+            <div className="flex items-start gap-3">
+              <span className="text-xl">🗂️</span>
+              <p><strong>Supported formats:</strong> WAV, MP3, M4A, FLAC</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">💾</span>
+              <p><strong>Maximum file size:</strong> 100MB</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">⚡</span>
+              <p>Files are automatically processed after capture</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">👀</span>
+              <p>Check the Transcripts page to view processing status</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">⏱️</span>
+              <p>Processing time depends on file length and complexity</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-xl">📈</span>
+              <p>Higher quality audio produces more accurate transcripts</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
