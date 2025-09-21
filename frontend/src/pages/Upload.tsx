@@ -29,6 +29,31 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [liveCallId, setLiveCallId] = useState<string | null>(null)
   const [liveLoading, setLiveLoading] = useState<boolean>(false)
   const [liveError, setLiveError] = useState<string | null>(null)
+  const [uploadedCallId, setUploadedCallId] = useState<string | null>(null)
+
+  // Fetch transcript for uploaded file
+  const fetchUploadedTranscript = useCallback(async (callId: string) => {
+    try {
+      console.log(`[CAPTURE] Fetching transcript for call_id: ${callId}`)
+      setLiveLoading(true)
+      setLiveError(null)
+      
+      const response = await apiClient.get(`/api/v1/pipeline/results/${callId}`)
+      const transcriptText = response.data.data.transcription?.transcription_text || ''
+      
+      console.log(`[CAPTURE] Transcript fetched:`, { callId, textLength: transcriptText.length })
+      
+      // Populate Live Transcription box
+      setLiveTranscript(transcriptText)
+      setLiveSource('upload')
+      setLiveCallId(callId)
+    } catch (error) {
+      console.error(`[CAPTURE] Failed to fetch transcript for ${callId}:`, error)
+      setLiveError('Failed to fetch transcript')
+    } finally {
+      setLiveLoading(false)
+    }
+  }, [])
 
   // Cycle processing label while any file is in 'processing'
   useEffect(() => {
@@ -39,6 +64,14 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     }, 3000)
     return () => window.clearInterval(id)
   }, [files])
+
+  // Fetch transcript when upload completes
+  useEffect(() => {
+    if (uploadedCallId) {
+      console.log(`[CAPTURE] Upload completed, fetching transcript for: ${uploadedCallId}`)
+      fetchUploadedTranscript(uploadedCallId)
+    }
+  }, [uploadedCallId, fetchUploadedTranscript])
 
   const processingLabel = processingStages[processingTick]
 
@@ -136,6 +169,13 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
 
       const result = response.data
       console.log(`[CAPTURE] Upload successful:`, result)
+
+      // Extract call_id from upload response for transcript fetching
+      const callId = result.call_id
+      if (callId) {
+        console.log(`[CAPTURE] Extracted call_id: ${callId}`)
+        setUploadedCallId(callId)
+      }
 
       // Update file status to completed
       setFiles(prev => prev.map(f => 
