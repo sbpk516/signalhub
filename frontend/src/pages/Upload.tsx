@@ -571,22 +571,40 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
               <LiveMicPanel
                 onNavigate={onNavigate}
                 onTranscriptStart={() => {
+                  console.log('[DEBUG] onTranscriptStart called - Resetting states')
+                  console.log('[DEBUG] Previous state:', { 
+                    liveTranscript: liveTranscript?.length || 0, 
+                    liveCallId, 
+                    liveError,
+                    liveSource 
+                  })
                   setLiveLoading(true)
                   setLiveError(null)
                   setLiveTranscript('')
                   setLiveCallId(null)
                   setLiveSource('mic')
+                  console.log('[DEBUG] States reset - liveTranscript cleared, liveCallId cleared')
                 }}
                 onTranscriptComplete={({ text, callId }) => {
+                  console.log('[DEBUG] onTranscriptComplete called')
+                  console.log('[DEBUG] Received data:', { 
+                    textLength: text?.length || 0, 
+                    callId,
+                    textPreview: text?.substring(0, 50) + '...' || 'empty'
+                  })
                   setLiveLoading(false)
                   setLiveError(null)
                   setLiveTranscript(text)
                   setLiveCallId(callId)
                   setLiveSource('mic')
+                  console.log('[DEBUG] States updated - transcript set, callId set')
                 }}
                 onTranscriptError={(message) => {
+                  console.log('[DEBUG] onTranscriptError called')
+                  console.log('[DEBUG] Error message:', message)
                   setLiveLoading(false)
                   setLiveError(message)
+                  console.log('[DEBUG] Error state set - loading false, error message set')
                 }}
               />
             </div>
@@ -906,12 +924,15 @@ function LiveMicPanel({
   const start = useCallback(async () => {
     try {
       setError(null)
+      console.log('[DEBUG] LiveMicPanel start() called')
+      console.log('[DEBUG] Previous sessionId:', sessionId)
       console.log('[LIVE] start(): creating session…')
       // Start session
       const res = await apiClient.post('/api/v1/live/start')
       const sid = res.data?.session_id as string
       if (!sid) throw new Error('Failed to create session')
       setSessionId(sid)
+      console.log('[DEBUG] New sessionId set:', sid)
       console.log('[LIVE] start(): session created', { sessionId: sid })
 
       // Get mic
@@ -976,7 +997,9 @@ function LiveMicPanel({
     setRecording(false)
     setProcessingFinal(true)
     setFinalText('')
+    console.log('[DEBUG] LiveMicPanel stop() - calling onTranscriptStart')
     onTranscriptStart && onTranscriptStart()
+    console.log('[DEBUG] LiveMicPanel stop() - onTranscriptStart completed')
     try {
       console.log('[LIVE] stop(): waiting 800ms for last chunk to finish uploading…')
       await new Promise(r => setTimeout(r, 800))
@@ -995,13 +1018,17 @@ function LiveMicPanel({
         console.log('[LIVE] stop(): response received', { ms: dt, chunksCount, concatOk, durationSec, callId: cid, transcriptPath, combinedPath, textLen: txt.length })
         setFinalText(txt)
         setCallId(cid)
+        console.log('[DEBUG] LiveMicPanel stop() - calling onTranscriptComplete with:', { textLength: txt.length, callId: cid })
         onTranscriptComplete && onTranscriptComplete({ text: txt, callId: cid })
+        console.log('[DEBUG] LiveMicPanel stop() - onTranscriptComplete completed')
       } else {
+        console.log('[DEBUG] LiveMicPanel stop() - no sessionId, calling onTranscriptError')
         onTranscriptError && onTranscriptError('Session not found')
       }
     } catch (e) {
       console.warn('[LIVE] stop() failed', e)
       const msg = e instanceof Error ? e.message : 'Failed to generate transcript'
+      console.log('[DEBUG] LiveMicPanel stop() - error occurred, calling onTranscriptError with:', msg)
       onTranscriptError && onTranscriptError(msg)
     } finally {
       setProcessingFinal(false)
