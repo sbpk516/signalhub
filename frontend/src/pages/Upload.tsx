@@ -591,10 +591,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
 
             {files.length > 0 && (
               <div className="space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="text-lg font-medium text-gray-900">
-                    Selected Files ({files.length})
-                  </h3>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                   <div className="flex space-x-3">
                     <button
                       onClick={startUpload}
