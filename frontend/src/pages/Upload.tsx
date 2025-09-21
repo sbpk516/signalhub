@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import { API_ENDPOINTS, API_BASE_URL, UI_CONFIG } from '../types/constants'
+import { API_ENDPOINTS, UI_CONFIG } from '../types/constants'
 import { apiClient } from '@/services/api/client'
 // Live batch mode: final transcript only; no SSE stream
 
@@ -17,11 +17,10 @@ interface UploadFile {
 }
 
 interface CaptureProps {
-  onUploadComplete?: () => void
   onNavigate?: (page: 'dashboard' | 'capture' | 'transcripts') => void
 }
 
-const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
+const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
   const [files, setFiles] = useState<UploadFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -406,11 +405,6 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     handleFileSelect(e.dataTransfer.files)
   }, [handleFileSelect])
 
-  // Validate file type
-  const isValidAudioFile = (file: File): boolean => {
-    const validTypes = ['audio/wav', 'audio/mp3', 'audio/m4a', 'audio/flac']
-    return validTypes.includes(file.type)
-  }
 
   // Upload file to backend
   const uploadFile = async (file: UploadFile) => {

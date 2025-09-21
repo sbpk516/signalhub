@@ -19,7 +19,7 @@ const Layout: React.FC = () => {
       case 'dashboard':
         return <Dashboard onNavigate={setActivePage} />
       case 'capture':
-        return <Capture onUploadComplete={handleUploadComplete} onNavigate={setActivePage} />
+        return <Capture onNavigate={setActivePage} />
       case 'transcripts':
         return <Transcripts />
       case 'analytics':
