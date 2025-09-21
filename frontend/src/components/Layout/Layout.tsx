@@ -19,7 +19,7 @@ const Layout: React.FC = () => {
       case 'dashboard':
         return <Dashboard onNavigate={setActivePage} />
       case 'upload':
-        return <Upload onUploadComplete={handleUploadComplete} />
+        return <Upload onUploadComplete={handleUploadComplete} onNavigate={setActivePage} />
       case 'results':
         return <Results />
       case 'analytics':

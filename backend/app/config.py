@@ -117,6 +117,14 @@ def is_live_mic_enabled() -> bool:
     return os.getenv("SIGNALHUB_LIVE_MIC", "0") == "1"
 
 
+def is_live_batch_only() -> bool:
+    """Return True to disable chunk STT/SSE and transcribe only at stop.
+
+    Controlled by SIGNALHUB_LIVE_BATCH_ONLY=1. Defaults to False.
+    """
+    return os.getenv("SIGNALHUB_LIVE_BATCH_ONLY", "0") == "1"
+
+
 # Override upload_dir for desktop mode at import-time
 if os.getenv("SIGNALHUB_MODE", "").lower() == "desktop":
     data_dir = _desktop_data_dir()
