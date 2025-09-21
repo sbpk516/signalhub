@@ -24,6 +24,11 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [processingTick, setProcessingTick] = useState(0)
+  const [liveTranscript, setLiveTranscript] = useState<string>('')
+  const [liveSource, setLiveSource] = useState<'mic' | 'upload' | null>(null)
+  const [liveCallId, setLiveCallId] = useState<string | null>(null)
+  const [liveLoading, setLiveLoading] = useState<boolean>(false)
+  const [liveError, setLiveError] = useState<string | null>(null)
 
   // Cycle processing label while any file is in 'processing'
   useEffect(() => {
@@ -190,9 +195,8 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     <div className="min-h-screen bg-[#f4f6fb]">
       <div className="max-w-6xl mx-auto px-6 py-10 space-y-8">
         {/* Header */}
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 text-3xl mb-4">🎧</div>
-          <h1 className="text-4xl font-semibold text-gray-900 mb-3">Capture Audio</h1>
+        <div className="text-center space-y-3">
+          <h1 className="text-4xl font-semibold text-gray-900">Capture Audio</h1>
           <p className="text-gray-600 text-base max-w-2xl mx-auto">
             Record live or import existing audio for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
           </p>
@@ -213,7 +217,27 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
               Capture ad-hoc audio directly from your browser. Start and stop to generate transcripts instantly.
             </p>
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 mb-6">
-              <LiveMicPanel onNavigate={onNavigate} />
+              <LiveMicPanel
+                onNavigate={onNavigate}
+                onTranscriptStart={() => {
+                  setLiveLoading(true)
+                  setLiveError(null)
+                  setLiveTranscript('')
+                  setLiveCallId(null)
+                  setLiveSource('mic')
+                }}
+                onTranscriptComplete={({ text, callId }) => {
+                  setLiveLoading(false)
+                  setLiveError(null)
+                  setLiveTranscript(text)
+                  setLiveCallId(callId)
+                  setLiveSource('mic')
+                }}
+                onTranscriptError={(message) => {
+                  setLiveLoading(false)
+                  setLiveError(message)
+                }}
+              />
             </div>
             <div className="text-sm text-blue-700 bg-blue-100 border border-blue-200 rounded-xl px-4 py-3">
               <strong>Tip:</strong> Keep the browser tab focused while recording for best results. You can view the finished transcript in the Transcripts tab.
@@ -364,6 +388,31 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
           </div>
         </div>
 
+        {/* Live transcription panel */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-2xl">📝</span>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
+              <p className="text-sm text-gray-500">Latest transcript will appear here after recording or import completes.</p>
+            </div>
+          </div>
+          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center">
+            {liveLoading ? (
+              <p className="text-sm text-gray-500">Generating transcript…</p>
+            ) : liveError ? (
+              <p className="text-sm text-red-500">{liveError}</p>
+            ) : liveTranscript ? (
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-wide text-gray-400">{liveSource === 'mic' ? 'Live Mic' : 'Import'} {liveCallId ? `• ${liveCallId.slice(0, 8)}` : ''}</div>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{liveTranscript}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No transcript available yet. Capture audio or upload a file to see the transcription.</p>
+            )}
+          </div>
+        </div>
+
         {/* Guidelines */}
         <div className="bg-[#e9f0ff] border border-blue-100 rounded-2xl p-6 md:p-8 space-y-6 lg:col-span-2">
           <div className="flex items-center gap-2 text-blue-600 text-lg font-semibold">
@@ -396,6 +445,8 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
             </div>
           </div>
         </div>
+
+
       </div>
     </div>
   )
@@ -417,7 +468,17 @@ const processingStages = ['Processing audio…', 'Transcribing speech…', 'Runn
 
 export default Capture
 
-function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'capture' | 'transcripts') => void }) {
+function LiveMicPanel({
+  onNavigate,
+  onTranscriptStart,
+  onTranscriptComplete,
+  onTranscriptError,
+}: {
+  onNavigate?: (page: 'dashboard' | 'capture' | 'transcripts') => void
+  onTranscriptStart?: () => void
+  onTranscriptComplete?: (payload: { text: string; callId: string | null }) => void
+  onTranscriptError?: (message: string) => void
+}) {
   const [recording, setRecording] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -466,7 +527,6 @@ function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'captu
           }
           console.log('[LIVE] ondataavailable: chunk ready', { size: blob.size, type: blob.type })
           const fd = new FormData()
-          // Name chunk with timestamp to aid backend debugging
           const extension = blob.type === 'audio/mp4' ? 'm4a' : 'webm'
           const file = new File([blob], `chunk_${Date.now()}.${extension}`, { type: blob.type })
           fd.append('file', file)
@@ -495,16 +555,15 @@ function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'captu
   const stop = useCallback(async () => {
     try {
       console.log('[LIVE] stop(): stopping recorder and mic…')
-      // Flush any buffered data and stop
       try { mediaRef.current?.requestData?.() } catch {}
       mediaRef.current?.stop()
       streamRef.current?.getTracks().forEach(t => t.stop())
     } catch {}
     setRecording(false)
     setProcessingFinal(true)
-    setFinalText("")
+    setFinalText('')
+    onTranscriptStart && onTranscriptStart()
     try {
-      // Give a brief moment for the last chunk upload to complete
       console.log('[LIVE] stop(): waiting 800ms for last chunk to finish uploading…')
       await new Promise(r => setTimeout(r, 800))
       if (sessionId) {
@@ -512,7 +571,7 @@ function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'captu
         const t0 = performance.now()
         const res = await apiClient.post(`/api/v1/live/stop?session_id=${encodeURIComponent(sessionId)}`)
         const dt = Math.round(performance.now() - t0)
-        const txt = (res.data?.final_text as string) || ""
+        const txt = (res.data?.final_text as string) || ''
         const cid = (res.data?.call_id as string) || null
         const chunksCount = res.data?.chunks_count
         const concatOk = res.data?.concat_ok
@@ -522,13 +581,18 @@ function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'captu
         console.log('[LIVE] stop(): response received', { ms: dt, chunksCount, concatOk, durationSec, callId: cid, transcriptPath, combinedPath, textLen: txt.length })
         setFinalText(txt)
         setCallId(cid)
+        onTranscriptComplete && onTranscriptComplete({ text: txt, callId: cid })
+      } else {
+        onTranscriptError && onTranscriptError('Session not found')
       }
     } catch (e) {
       console.warn('[LIVE] stop() failed', e)
+      const msg = e instanceof Error ? e.message : 'Failed to generate transcript'
+      onTranscriptError && onTranscriptError(msg)
     } finally {
       setProcessingFinal(false)
     }
-  }, [sessionId])
+  }, [sessionId, onTranscriptStart, onTranscriptComplete, onTranscriptError])
 
   return (
     <div>
