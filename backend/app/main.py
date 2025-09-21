@@ -453,54 +453,48 @@ async def live_stop(session_id: str):
                 await event_bus.complete(session_id)
                 return {"session_id": session_id, "final_text": ""}
 
-            # 1) Convert each chunk to 16 kHz mono WAV to ensure uniform params for concat
-            converted_paths = []
-            for i, p in enumerate(chunks):
-                try:
-                    conv = audio_processor.convert_audio_format(str(p), output_format="wav", sample_rate=16000, channels=1)
-                    wav_path = conv.get("output_path") if conv.get("conversion_success") else str(p)
-                    converted_paths.append(wav_path)
-                except Exception as e:
-                    logger.warning(f"[MIC] convert failed for chunk {i}: {e}; using original")
-                    converted_paths.append(str(p))
-
-            # 2) Build concat list file
-            concat_list = sess.dir / "concat.txt"
+            # 1) Concatenate raw WebM chunks into a single file (MediaRecorder blobs share the first header)
+            combined_webm = sess.dir / "combined.webm"
             try:
-                with open(concat_list, "w", encoding="utf-8") as f:
-                    for wp in converted_paths:
-                        f.write(f"file '{Path(wp).as_posix()}'\n")
+                with open(combined_webm, "wb") as out_f:
+                    for i, chunk_path in enumerate(chunks):
+                        try:
+                            with open(chunk_path, "rb") as in_f:
+                                data = in_f.read()
+                                out_f.write(data)
+                                logger.debug(
+                                    f"[MIC] concat append session_id={session_id} chunk_idx={i} bytes={len(data)}"
+                                )
+                        except Exception as e:
+                            logger.error(f"[MIC] concat read failed chunk {i}: {e}")
+                            raise
             except Exception as e:
-                logger.error(f"[MIC] failed to write concat list: {e}")
-                raise HTTPException(status_code=500, detail="failed_to_prepare_concat")
+                logger.error(f"[MIC] failed to concatenate webm chunks: {e}")
+                raise HTTPException(status_code=500, detail="audio_concat_failed")
 
-            # 3) Concat to single WAV
+            # 2) Transcode combined WebM to single WAV
             combined_path = sess.dir / "combined.wav"
             concat_ok = False
             try:
                 cmd = [
-                    "ffmpeg", "-f", "concat", "-safe", "0",
-                    "-i", str(concat_list),
-                    "-ar", "16000", "-ac", "1",
+                    "ffmpeg",
+                    "-i", str(combined_webm),
+                    "-ar", "16000",
+                    "-ac", "1",
                     "-y", str(combined_path),
                 ]
-                logger.info(f"[MIC] ffmpeg concat: {' '.join(cmd)}")
+                logger.info(f"[MIC] ffmpeg transcode combined: {' '.join(cmd)}")
                 proc = subprocess.run(cmd, capture_output=True, text=True)
                 if proc.returncode != 0:
-                    logger.error(f"[MIC] concat failed: {proc.stderr}")
-                    # Fallback: if single chunk, just use it
-                    if len(converted_paths) == 1:
-                        combined_to_use = converted_paths[0]
-                    else:
-                        raise HTTPException(status_code=500, detail="audio_concat_failed")
-                else:
-                    combined_to_use = str(combined_path)
-                    concat_ok = True
+                    logger.error(f"[MIC] transcode failed: {proc.stderr}")
+                    raise HTTPException(status_code=500, detail="audio_concat_failed")
+                combined_to_use = str(combined_path)
+                concat_ok = True
             except HTTPException:
                 raise
             except Exception as e:
-                logger.error(f"[MIC] concat exception: {e}")
-                combined_to_use = converted_paths[0]
+                logger.error(f"[MIC] transcode exception: {e}")
+                combined_to_use = str(chunks[0])
 
             # 4) Single transcription pass
             tr = whisper_processor.transcribe_audio(combined_to_use)
@@ -516,6 +510,7 @@ async def live_stop(session_id: str):
 
             # 6) Persist to DB so it appears in Results
             call_id = session_id  # reuse session_id as call_id for traceability
+            db_session = None
             try:
                 import os as _os
                 from .database import get_db as _get_db
@@ -526,7 +521,7 @@ async def live_stop(session_id: str):
                 except Exception:
                     file_size_bytes = 0
                 # Create Call row (status 'uploaded')
-                upload_handler.create_call_record(
+                await upload_handler.create_call_record(
                     db_session,
                     combined_to_use,
                     original_filename,
@@ -535,6 +530,12 @@ async def live_stop(session_id: str):
                 )
             except Exception as e:
                 logger.warning(f"[MIC] failed to create Call record for {call_id}: {e}")
+            finally:
+                try:
+                    if db_session:
+                        db_session.close()
+                except Exception:
+                    pass
 
             # Store transcript row
             try:
@@ -562,7 +563,7 @@ async def live_stop(session_id: str):
                 "transcript_path": transcript_path,
                 "combined_path": str(combined_to_use),
                 "call_id": call_id,
-                "chunks_count": len(converted_paths),
+                "chunks_count": len(chunks),
                 "concat_ok": concat_ok,
                 "duration_seconds": duration,
             }
