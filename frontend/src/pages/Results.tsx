@@ -5,10 +5,10 @@ import { formatTranscript } from '@/utils/transcript'
 import { useTranscriptionStream } from '@/services/api/live'
 
 // STEP 2: Add basic API integration
-// We'll add API call to fetch results from backend
+// We'll add API call to fetch transcripts from backend
 
-const Results: React.FC = () => {
-  // STEP 2: Add state for API results
+const Transcripts: React.FC = () => {
+// STEP 2: Add state for API transcripts
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -30,12 +30,12 @@ const Results: React.FC = () => {
   // Sort toggle (newest/oldest)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   
-  console.log('[RESULTS] Component rendering - Step 2 with API integration')
+  console.log('[TRANSCRIPTS] Component rendering - Step 2 with API integration')
   
   // STEP 2: Add API call function
   const fetchResults = async () => {
     try {
-      console.log('[RESULTS] 🚀 Starting API call to fetch results')
+      console.log('[TRANSCRIPTS] 🚀 Starting API call to fetch transcripts')
       setLoading(true)
       setError(null)
       
@@ -44,24 +44,24 @@ const Results: React.FC = () => {
       params.append('sort', 'created_at')
       params.append('direction', sortDirection)
       const url = `/api/v1/pipeline/results?${params.toString()}`
-      console.log('[RESULTS] 🔎 Fetch URL:', url)
+      console.log('[TRANSCRIPTS] 🔎 Fetch URL:', url)
       const { data } = await apiClient.get(url)
-      console.log('[RESULTS] 📥 API Response received:', data)
+      console.log('[TRANSCRIPTS] 📥 API Response received:', data)
       
       // Extract results from response
       const resultsData = data.data?.results || []
       setResults(resultsData)
-      console.log('[RESULTS] ✅ Results loaded:', resultsData.length, 'items')
-      console.log('[RESULTS] 📊 Full response structure:', data)
+  console.log('[TRANSCRIPTS] ✅ Transcripts loaded:', resultsData.length, 'items')
+      console.log('[TRANSCRIPTS] 📊 Full response structure:', data)
       if (resultsData.length > 0) {
         const first = resultsData[0]?.created_at || null
         const last = resultsData[resultsData.length - 1]?.created_at || null
-        console.log('[RESULTS] 🧭 Order check (created_at):', { direction: sortDirection, first, last })
+        console.log('[TRANSCRIPTS] 🧭 Order check (created_at):', { direction: sortDirection, first, last })
       }
       
     } catch (err) {
-      console.error('[RESULTS] ❌ API call failed:', err)
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch results'
+      console.error('[TRANSCRIPTS] ❌ API call failed:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch transcripts'
       setError(errorMessage)
     } finally {
       setLoading(false)
@@ -108,18 +108,18 @@ const Results: React.FC = () => {
     }
   }
   
-  // STEP 2: Load results when component mounts and when sort changes
+  // Load transcripts when component mounts and when sort changes
   useEffect(() => {
-    console.log('[RESULTS] 🔄 Fetching results with sort direction:', sortDirection)
+    console.log('[TRANSCRIPTS] 🔄 Fetching transcripts with sort direction:', sortDirection)
     fetchResults()
   }, [sortDirection])
   
   return (
     <div className="p-6">
-      <h1 className="text-3xl font-bold text-gray-900 mb-4">Results Page</h1>
-      <p className="text-gray-600 mb-4">Step 3: Enhanced Results Display</p>
+      <h1 className="text-3xl font-bold text-gray-900 mb-4">Transcripts</h1>
+      <p className="text-gray-600 mb-4">Review captured calls, transcripts, and analysis details.</p>
       
-      {/* Step 3 Status */}
+      {/* Status */}
       <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
         <div className="flex justify-between items-start">
           <div className="flex">
@@ -127,9 +127,9 @@ const Results: React.FC = () => {
               <span className="text-green-400 text-xl">🎯</span>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-green-800">Step 3: Enhanced Results Display</h3>
+              <h3 className="text-sm font-medium text-green-800">Transcript Overview</h3>
               <div className="mt-2 text-sm text-green-700">
-                Now with refresh button and better result formatting. Ready for real data!
+                Refresh after capturing audio to pull the latest sessions, or clear the list when you need a reset.
               </div>
             </div>
           </div>
@@ -141,11 +141,11 @@ const Results: React.FC = () => {
               disabled={loading}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? '🔄' : '🔄'} Refresh Results
+              {loading ? '🔄' : '🔄'} Refresh Transcripts
             </button>
             <button
               onClick={async () => {
-                if (!confirm('This will delete ALL results from the database and remove uploaded files. Continue?')) return
+                if (!confirm('This will delete ALL transcripts from the database and remove uploaded files. Continue?')) return
                 try {
                   setClearing(true)
                   setClearError(null)
@@ -157,7 +157,7 @@ const Results: React.FC = () => {
                   setDetailErrors({})
                   setReanalyzeErrors({})
                 } catch (err) {
-                  const msg = err instanceof Error ? err.message : 'Failed to clear results'
+                  const msg = err instanceof Error ? err.message : 'Failed to clear transcripts'
                   setClearError(msg)
                 } finally {
                   setClearing(false)
@@ -172,9 +172,9 @@ const Results: React.FC = () => {
               onClick={() => {
                 try {
                   localStorage.clear()
-                  console.log('[RESULTS] Local storage cleared')
+                  console.log('[TRANSCRIPTS] Local storage cleared')
                 } catch (e) {
-                  console.warn('[RESULTS] Failed to clear localStorage', e)
+                  console.warn('[TRANSCRIPTS] Failed to clear localStorage', e)
                 }
               }}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
@@ -189,7 +189,7 @@ const Results: React.FC = () => {
       {loading && (
         <div className="text-center py-8">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading results from API...</p>
+          <p className="mt-4 text-gray-600">Loading transcripts from API...</p>
         </div>
       )}
       
@@ -221,25 +221,25 @@ const Results: React.FC = () => {
         </div>
       )}
       
-      {/* Results Display */}
+      {/* Transcript Display */}
       {!loading && !error && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">Results ({results.length}) - Page 1 of 1</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Transcripts ({results.length}) - Page 1 of 1</h2>
           <p className="text-sm text-gray-600 mb-4">
-            💡 <strong>Tip:</strong> Newer uploads with file sizes are on later pages. Use pagination to see them!
+            💡 <strong>Tip:</strong> Capture new audio or upload files, then refresh to see the latest transcripts.
           </p>
           
           {results.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-6xl mb-4">📭</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Results Found</h3>
-              <p className="text-gray-600">Upload some audio files to see results here</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Transcripts Found</h3>
+              <p className="text-gray-600">Capture or upload audio to generate transcripts here.</p>
             </div>
           ) : (
             <div className="bg-white shadow rounded-lg overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Recent Calls</h3>
-                <p className="text-sm text-gray-500 mt-1">Showing {results.length} processed audio files</p>
+                <h3 className="text-lg font-medium text-gray-900">Recent Transcripts</h3>
+                <p className="text-sm text-gray-500 mt-1">Showing {results.length} processed recordings</p>
               </div>
               {/* Column header row for alignment with list */}
               <div className="px-6 py-2 bg-gray-50 border-t border-gray-200">
@@ -253,7 +253,7 @@ const Results: React.FC = () => {
                       aria-label={`Sort by created time ${sortDirection === 'desc' ? 'descending (newest first)' : 'ascending (oldest first)'}`}
                       onClick={() => {
                         const next = sortDirection === 'desc' ? 'asc' : 'desc'
-                        console.log('[RESULTS] 🔁 Toggling sort direction:', { from: sortDirection, to: next })
+                        console.log('[TRANSCRIPTS] 🔁 Toggling sort direction:', { from: sortDirection, to: next })
                         setSortDirection(next)
                       }}
                       className="inline-flex items-center space-x-1 text-gray-700 hover:text-gray-900"
@@ -574,7 +574,7 @@ const Results: React.FC = () => {
   )
 }
 
-export default Results
+export default Transcripts
 
 // Local component for rendering formatted transcript
 const TranscriptBlock: React.FC<{ text: string; enabled: boolean; sentencesPerParagraph: number }> = ({ text, enabled, sentencesPerParagraph }) => {

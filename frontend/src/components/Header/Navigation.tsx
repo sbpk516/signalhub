@@ -1,15 +1,15 @@
 import React from 'react'
 
 interface NavigationProps {
-  activePage: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings'
-  onPageChange: (page: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings') => void
+  activePage: 'dashboard' | 'capture' | 'transcripts' | 'analytics' | 'settings'
+  onPageChange: (page: 'dashboard' | 'capture' | 'transcripts' | 'analytics' | 'settings') => void
 }
 
 const Navigation: React.FC<NavigationProps> = ({ activePage, onPageChange }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'upload', label: 'Upload', icon: '📁' },
-    { id: 'results', label: 'Results', icon: '📋' }
+    { id: 'capture', label: 'Capture', icon: '🎙️' },
+    { id: 'transcripts', label: 'Transcripts', icon: '📄' }
   ]
 
   return (

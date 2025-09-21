@@ -15,12 +15,12 @@ interface UploadFile {
   file?: File
 }
 
-interface UploadProps {
+interface CaptureProps {
   onUploadComplete?: () => void
-  onNavigate?: (page: 'dashboard' | 'upload' | 'results') => void
+  onNavigate?: (page: 'dashboard' | 'capture' | 'transcripts') => void
 }
 
-const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
+const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [files, setFiles] = useState<UploadFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -81,7 +81,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
   // Upload file to backend
   const uploadFile = async (file: UploadFile) => {
     try {
-      console.log(`[UPLOAD] Starting upload for file: ${file.name}`)
+      console.log(`[CAPTURE] Starting upload for file: ${file.name}`)
       setUploading(true)
       
       // Update status to uploading
@@ -97,8 +97,8 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
       if (!actualFile) throw new Error('File content not available')
       formData.append('file', actualFile)
       
-      console.log(`[UPLOAD] Sending file to: ${API_ENDPOINTS.UPLOAD}`)
-      console.log(`[UPLOAD] File details:`, {
+      console.log(`[CAPTURE] Sending file to: ${API_ENDPOINTS.UPLOAD}`)
+      console.log(`[CAPTURE] File details:`, {
         name: actualFile.name,
         size: actualFile.size,
         type: actualFile.type
@@ -106,7 +106,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
 
       // Make API call to backend using relative URL (will use Vite proxy)
       const uploadUrl = API_ENDPOINTS.UPLOAD
-      console.log(`[UPLOAD] Upload URL: ${uploadUrl}`)
+      console.log(`[CAPTURE] Upload URL: ${uploadUrl}`)
 
       let uploadFinished = false
       const response = await apiClient.post(uploadUrl, formData, {
@@ -117,7 +117,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
           const loaded = evt.loaded || 0
           const pct = total ? Math.min(100, Math.round((loaded / total) * 100)) : loaded ? 100 : 0
           // Debug log to verify progress events
-          if (pct % 10 === 0) console.log(`[UPLOAD] Progress ${pct}% (${loaded}/${total})`)
+          if (pct % 10 === 0) console.log(`[CAPTURE] Progress ${pct}% (${loaded}/${total})`)
           setFiles(prev => prev.map(f => f.id === file.id ? { ...f, progress: pct } : f))
           if (pct >= 100 && !uploadFinished) {
             uploadFinished = true
@@ -127,11 +127,11 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
         }
       })
   
-      console.log(`[UPLOAD] Response status: ${response.status}`)
-      console.log(`[UPLOAD] Response headers:`, response.headers)
+      console.log(`[CAPTURE] Response status: ${response.status}`)
+      console.log(`[CAPTURE] Response headers:`, response.headers)
 
       const result = response.data
-      console.log(`[UPLOAD] Upload successful:`, result)
+      console.log(`[CAPTURE] Upload successful:`, result)
 
       // Update file status to completed
       setFiles(prev => prev.map(f => 
@@ -140,7 +140,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
           : f
       ))
 
-      console.log(`[UPLOAD] File ${file.name} uploaded successfully!`)
+      console.log(`[CAPTURE] File ${file.name} uploaded successfully!`)
 
       // Don't immediately switch pages - let user see the completed status
       // if (onUploadComplete) {
@@ -151,7 +151,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
       // Optional: inline success message or toast could be added here
 
     } catch (error) {
-      console.error(`[UPLOAD] Error uploading ${file.name}:`, error)
+      console.error(`[CAPTURE] Error uploading ${file.name}:`, error)
       
       setFiles(prev => prev.map(f => 
         f.id === file.id 
@@ -170,7 +170,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
   // Start upload for all pending files
   const startUpload = async () => {
     const pendingFiles = files.filter(f => f.status === 'pending')
-    console.log(`[UPLOAD] Starting upload for ${pendingFiles.length} pending files`)
+    console.log(`[CAPTURE] Starting upload for ${pendingFiles.length} pending files`)
     
     for (const file of pendingFiles) {
       await uploadFile(file)
@@ -191,13 +191,13 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Upload Audio Files</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Capture Audio</h1>
         <p className="text-gray-600 max-w-2xl mx-auto">
-          Upload your audio files for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
+          Record live or import existing audio for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
         </p>
       </div>
 
-      {/* Upload Zone */}
+      {/* Capture Zone */}
       <Card>
         <div className="space-y-6">
           {/* Drag & Drop Zone */}
@@ -249,7 +249,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
                     disabled={uploading || !files.some(f => f.status === 'pending')}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                   >
-                    🚀 Start Upload
+                    🚀 Process Files
                   </button>
                   <button
                     onClick={clearCompleted}
@@ -344,12 +344,12 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
 
           {/* Instructions */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 mb-2">📋 Upload Instructions</h4>
+            <h4 className="font-medium text-blue-900 mb-2">📋 Capture Guidelines</h4>
             <ul className="text-sm text-blue-800 space-y-1">
               <li>• Supported formats: WAV, MP3, M4A, FLAC</li>
               <li>• Maximum file size: 100MB</li>
-              <li>• Files are automatically processed after upload</li>
-              <li>• Check the Results page to view processing status</li>
+              <li>• Files are automatically processed after capture</li>
+              <li>• Check the Transcripts page to view processing status</li>
               <li>• Processing time depends on file length and complexity</li>
             </ul>
           </div>
@@ -389,9 +389,9 @@ const processingStages = ['Processing audio…', 'Transcribing speech…', 'Runn
 
 // Hook-like logic in component scope will compute label
 
-export default Upload
+export default Capture
 
-function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'upload' | 'results') => void }) {
+function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'capture' | 'transcripts') => void }) {
   const [recording, setRecording] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -530,12 +530,12 @@ function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'uploa
           {callId && (
             <button
               onClick={() => {
-                console.log('[LIVE] navigate: View in Results clicked', { callId })
-                onNavigate && onNavigate('results')
+                console.log('[LIVE] navigate: View in Transcripts clicked', { callId })
+                onNavigate && onNavigate('transcripts')
               }}
               className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
             >
-              View in Results
+              View Transcripts
             </button>
           )}
         </div>

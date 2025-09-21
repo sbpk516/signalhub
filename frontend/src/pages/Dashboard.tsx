@@ -34,7 +34,7 @@ const timeAgo = (iso?: string) => {
 }
 
 type DashboardProps = {
-  onNavigate?: (page: 'dashboard' | 'upload' | 'results') => void
+  onNavigate?: (page: 'dashboard' | 'capture' | 'transcripts') => void
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
@@ -272,13 +272,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           <Card title="Quick Actions" className="h-full">
             <div className="space-y-4">
               <button
-                onClick={() => onNavigate?.('upload')}
+                onClick={() => onNavigate?.('capture')}
                 className="w-full p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all duration-200 group"
               >
                 <div className="text-center">
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📤</div>
-                  <div className="font-medium text-gray-900 group-hover:text-blue-700">Upload Audio</div>
-                  <div className="text-sm text-gray-500 mt-1">Add new audio file</div>
+                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">🎙️</div>
+                  <div className="font-medium text-gray-900 group-hover:text-blue-700">Capture Audio</div>
+                  <div className="text-sm text-gray-500 mt-1">Record live or upload existing audio</div>
                 </div>
               </button>
               
@@ -294,13 +294,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               </button>
               
               <button
-                onClick={() => onNavigate?.('results')}
+                onClick={() => onNavigate?.('transcripts')}
                 className="w-full p-4 border-2 border-dashed border-purple-300 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all duration-200 group"
               >
                 <div className="text-center">
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📋</div>
-                  <div className="font-medium text-gray-900 group-hover:text-purple-700">View Results</div>
-                  <div className="text-sm text-gray-500 mt-1">See all results</div>
+                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">📄</div>
+                  <div className="font-medium text-gray-900 group-hover:text-purple-700">View Transcripts</div>
+                  <div className="text-sm text-gray-500 mt-1">Review recent transcription output</div>
                 </div>
               </button>
 

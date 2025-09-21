@@ -3,22 +3,22 @@ import React from 'react'
 interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
-  activePage: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings'
-  onPageChange: (page: 'dashboard' | 'upload' | 'results' | 'analytics' | 'settings') => void
+  activePage: 'dashboard' | 'capture' | 'transcripts' | 'analytics' | 'settings'
+  onPageChange: (page: 'dashboard' | 'capture' | 'transcripts' | 'analytics' | 'settings') => void
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, activePage, onPageChange }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊', description: 'Overview and analytics' },
-    { id: 'upload', label: 'Upload', icon: '📁', description: 'Upload audio files' },
-    { id: 'results', label: 'Results', icon: '📋', description: 'View analysis results' },
+    { id: 'capture', label: 'Capture', icon: '🎙️', description: 'Record or upload audio' },
+    { id: 'transcripts', label: 'Transcripts', icon: '📄', description: 'Review completed transcriptions' },
     { id: 'analytics', label: 'Analytics', icon: '📈', description: 'Advanced insights' },
     { id: 'settings', label: 'Settings', icon: '⚙️', description: 'Configuration' },
     { id: 'help', label: 'Help', icon: '❓', description: 'Documentation & support' }
   ]
 
   const handleItemClick = (itemId: string) => {
-    if (['dashboard', 'upload', 'results', 'analytics', 'settings'].includes(itemId)) {
+    if (['dashboard', 'capture', 'transcripts', 'analytics', 'settings'].includes(itemId)) {
       onPageChange(itemId as any)
     }
   }
@@ -57,7 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, activePage, onPageC
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
             {menuItems.map((item) => {
               const isActive = activePage === (item.id as any)
-              const isClickable = ['dashboard', 'upload', 'results', 'analytics', 'settings'].includes(item.id)
+              const isClickable = ['dashboard', 'capture', 'transcripts', 'analytics', 'settings'].includes(item.id)
               
               return (
                 <div
