@@ -13,10 +13,10 @@ import logging
 import json
 import os
 
-from .config import settings, get_database_url, is_live_transcription_enabled, is_live_mic_enabled
+from .config import settings, get_database_url, is_live_transcription_enabled, is_live_mic_enabled, is_live_batch_only
 from .database import get_db, create_tables
 from .models import User, Call, Transcript, Analysis
-from .upload import upload_audio_file, get_upload_status
+from .upload import upload_audio_file, get_upload_status, upload_handler
 from .pipeline_orchestrator import AudioProcessingPipeline
 from .pipeline_monitor import pipeline_monitor
 from .debug_utils import debug_helper
@@ -367,31 +367,65 @@ async def live_chunk(session_id: str, file: UploadFile = File(...)):
         raw_dir = sess.dir / "incoming"
         raw_dir.mkdir(exist_ok=True)
         raw_path = raw_dir / f"{uuid.uuid4()}_{file.filename or 'chunk'}"
+        content_type = getattr(file, "content_type", None)
+        filename = file.filename or "chunk"
+        logger.debug(
+            f"[MIC] chunk metadata session_id={session_id} filename={filename} content_type={content_type}"
+        )
         content = await file.read()
+        content_size = len(content)
+        logger.debug(f"[MIC] chunk payload session_id={session_id} bytes={content_size}")
         with open(raw_path, 'wb') as f:
             f.write(content)
+        try:
+            written_size = raw_path.stat().st_size
+        except OSError:
+            written_size = None
         idx = live_sessions.add_raw_chunk(session_id, raw_path)
-        logger.info(f"[MIC] chunk received session_id={session_id} idx={idx} size={len(content)}B path={raw_path}")
+        dest_path = sess.chunks[idx]
+        try:
+            dest_size = dest_path.stat().st_size
+        except OSError:
+            dest_size = None
+        logger.info(
+            f"[MIC] chunk received session_id={session_id} idx={idx} read={content_size}B wrote={written_size}B stored={dest_size}B path={dest_path} ct={content_type}"
+        )
 
-        # Convert to wav mono 16k for Whisper
-        converted = audio_processor.convert_audio_format(str(sess.chunks[idx]), output_format="wav", sample_rate=16000, channels=1)
-        wav_path = converted.get("output_path") if converted.get("conversion_success") else str(sess.chunks[idx])
-        logger.info(f"[MIC] chunk convert session_id={session_id} idx={idx} converted={converted.get('conversion_success')} wav={wav_path}")
+        if is_live_batch_only():
+            # Batch-only mode: do not transcribe or emit SSE during recording
+            return {"ok": True, "chunk_index": idx, "batch_only": True}
+        else:
+            # Give filesystem a moment to flush renamed chunk before conversion
+            await asyncio.sleep(0.05)
+            if idx == 0:
+                # Convert the first chunk so we can provide an early partial transcript
+                converted = audio_processor.convert_audio_format(
+                    str(sess.chunks[idx]), output_format="wav", sample_rate=16000, channels=1
+                )
+                wav_path = converted.get("output_path") if converted.get("conversion_success") else str(sess.chunks[idx])
+                logger.info(
+                    f"[MIC] chunk convert session_id={session_id} idx={idx} converted={converted.get('conversion_success')} wav={wav_path}"
+                )
 
-        # Transcribe this chunk
-        part = whisper_processor.transcribe_audio(wav_path)
-        text = part.get("text", "") if part.get("transcription_success") else ""
-        logger.info(f"[MIC] chunk transcribed session_id={session_id} idx={idx} text_len={len(text)}")
-        live_sessions.set_partial(session_id, idx, text)
+                part = whisper_processor.transcribe_audio(wav_path)
+                text = part.get("text", "") if part.get("transcription_success") else ""
+                logger.info(f"[MIC] chunk transcribed session_id={session_id} idx={idx} text_len={len(text)}")
+                live_sessions.set_partial(session_id, idx, text)
 
-        # Emit SSE partial under the same stream (session_id acts as call_id)
-        await event_bus.publish(session_id, {
-            "type": "partial",
-            "call_id": session_id,
-            "chunk_index": idx,
-            "text": text,
-        })
-        return {"ok": True, "chunk_index": idx, "text_length": len(text)}
+                await event_bus.publish(session_id, {
+                    "type": "partial",
+                    "call_id": session_id,
+                    "chunk_index": idx,
+                    "text": text,
+                })
+                return {"ok": True, "chunk_index": idx, "text_length": len(text)}
+            else:
+                logger.info(
+                    f"[MIC] chunk skip convert session_id={session_id} idx={idx} reason=webm-cluster-only"
+                )
+                # Defer transcription to batch concat at stop()
+                live_sessions.set_partial(session_id, idx, "")
+                return {"ok": True, "chunk_index": idx, "skipped_conversion": True}
     except HTTPException:
         raise
     except Exception as e:
@@ -404,10 +438,140 @@ async def live_stop(session_id: str):
     if not is_live_mic_enabled():
         raise HTTPException(status_code=404, detail="Live mic disabled")
     try:
-        out = live_sessions.stop(session_id)
-        logger.info(f"[MIC] stop session_id={session_id} final_text_len={len(out.get('final_text') or '')}")
-        await event_bus.complete(session_id)
-        return {"session_id": session_id, "final_text": out.get("final_text", "")}
+        sess = live_sessions.get(session_id)
+        if not sess:
+            raise KeyError("session not found")
+
+        if is_live_batch_only():
+            # Batch mode: normalize chunks, concatenate, then transcribe once
+            from pathlib import Path
+            import subprocess
+
+            chunks = list(sess.chunks)
+            if not chunks:
+                # Nothing recorded
+                await event_bus.complete(session_id)
+                return {"session_id": session_id, "final_text": ""}
+
+            # 1) Convert each chunk to 16 kHz mono WAV to ensure uniform params for concat
+            converted_paths = []
+            for i, p in enumerate(chunks):
+                try:
+                    conv = audio_processor.convert_audio_format(str(p), output_format="wav", sample_rate=16000, channels=1)
+                    wav_path = conv.get("output_path") if conv.get("conversion_success") else str(p)
+                    converted_paths.append(wav_path)
+                except Exception as e:
+                    logger.warning(f"[MIC] convert failed for chunk {i}: {e}; using original")
+                    converted_paths.append(str(p))
+
+            # 2) Build concat list file
+            concat_list = sess.dir / "concat.txt"
+            try:
+                with open(concat_list, "w", encoding="utf-8") as f:
+                    for wp in converted_paths:
+                        f.write(f"file '{Path(wp).as_posix()}'\n")
+            except Exception as e:
+                logger.error(f"[MIC] failed to write concat list: {e}")
+                raise HTTPException(status_code=500, detail="failed_to_prepare_concat")
+
+            # 3) Concat to single WAV
+            combined_path = sess.dir / "combined.wav"
+            concat_ok = False
+            try:
+                cmd = [
+                    "ffmpeg", "-f", "concat", "-safe", "0",
+                    "-i", str(concat_list),
+                    "-ar", "16000", "-ac", "1",
+                    "-y", str(combined_path),
+                ]
+                logger.info(f"[MIC] ffmpeg concat: {' '.join(cmd)}")
+                proc = subprocess.run(cmd, capture_output=True, text=True)
+                if proc.returncode != 0:
+                    logger.error(f"[MIC] concat failed: {proc.stderr}")
+                    # Fallback: if single chunk, just use it
+                    if len(converted_paths) == 1:
+                        combined_to_use = converted_paths[0]
+                    else:
+                        raise HTTPException(status_code=500, detail="audio_concat_failed")
+                else:
+                    combined_to_use = str(combined_path)
+                    concat_ok = True
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"[MIC] concat exception: {e}")
+                combined_to_use = converted_paths[0]
+
+            # 4) Single transcription pass
+            tr = whisper_processor.transcribe_audio(combined_to_use)
+            final_text = (tr.get("text") or "").strip() if tr.get("transcription_success") else ""
+            logger.info(f"[MIC] stop batch session_id={session_id} final_text_len={len(final_text)}")
+
+            # 5) Save transcript JSON (using session_id as call_id)
+            try:
+                save = whisper_processor.save_transcript(session_id, tr)
+                transcript_path = save.get("transcript_path")
+            except Exception:
+                transcript_path = None
+
+            # 6) Persist to DB so it appears in Results
+            call_id = session_id  # reuse session_id as call_id for traceability
+            try:
+                import os as _os
+                from .database import get_db as _get_db
+                db_session = next(_get_db())
+                original_filename = f"live_mic_{call_id}.wav"
+                try:
+                    file_size_bytes = _os.path.getsize(combined_to_use)
+                except Exception:
+                    file_size_bytes = 0
+                # Create Call row (status 'uploaded')
+                upload_handler.create_call_record(
+                    db_session,
+                    combined_to_use,
+                    original_filename,
+                    call_id,
+                    file_size_bytes,
+                )
+            except Exception as e:
+                logger.warning(f"[MIC] failed to create Call record for {call_id}: {e}")
+
+            # Store transcript row
+            try:
+                db_integration.store_transcript(call_id, tr)
+            except Exception as e:
+                logger.warning(f"[MIC] failed to store transcript for {call_id}: {e}")
+
+            # Update duration and mark completed
+            try:
+                analysis = audio_processor.analyze_audio_file(combined_to_use)
+                duration = float(analysis.get("duration_seconds") or 0)
+            except Exception:
+                analysis = {}
+                duration = None
+            try:
+                db_integration.update_call_status(call_id, "completed", duration=duration)
+            except Exception as e:
+                logger.warning(f"[MIC] failed to update call status for {call_id}: {e}")
+
+            # Mark SSE stream completed for any listeners (harmless if unused)
+            await event_bus.complete(session_id)
+            return {
+                "session_id": session_id,
+                "final_text": final_text,
+                "transcript_path": transcript_path,
+                "combined_path": str(combined_to_use),
+                "call_id": call_id,
+                "chunks_count": len(converted_paths),
+                "concat_ok": concat_ok,
+                "duration_seconds": duration,
+            }
+        else:
+            # Legacy incremental mode: concatenate partials already captured
+            out = live_sessions.stop(session_id)
+            logger.info(f"[MIC] stop session_id={session_id} final_text_len={len(out.get('final_text') or '')}")
+            await event_bus.complete(session_id)
+            return {"session_id": session_id, "final_text": out.get("final_text", "")}
     except KeyError:
         raise HTTPException(status_code=404, detail="session not found")
     except Exception as e:

@@ -310,10 +310,20 @@ class AudioProcessor:
                     else:
                         raise ValueError("Output file is empty or missing")
                 else:
+                    stderr = result.stderr.strip()
+                    logger.error(
+                        "FFmpeg conversion failed",
+                        extra={
+                            "input_path": input_path,
+                            "output_path": str(output_path),
+                            "returncode": result.returncode,
+                            "stderr": stderr,
+                        }
+                    )
                     raise subprocess.CalledProcessError(
-                        result.returncode, 
-                        'ffmpeg', 
-                        result.stderr
+                        result.returncode,
+                        'ffmpeg',
+                        stderr
                     )
                     
             except subprocess.TimeoutExpired:
@@ -332,7 +342,14 @@ class AudioProcessor:
                 }
                 
             except Exception as e:
-                logger.error(f"Audio conversion failed: {e}")
+                err_extra = {}
+                if isinstance(e, subprocess.CalledProcessError):
+                    err_extra = {
+                        "cmd": e.cmd,
+                        "returncode": e.returncode,
+                        "stderr": getattr(e, "stderr", ""),
+                    }
+                logger.error(f"Audio conversion failed: {e}", extra=err_extra)
                 debug_helper.capture_exception(
                     "audio_conversion",
                     e,

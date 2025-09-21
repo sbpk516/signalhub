@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Card } from '../components/Shared'
 import { API_ENDPOINTS, API_BASE_URL, UI_CONFIG } from '../types/constants'
 import { apiClient } from '@/services/api/client'
-import { useTranscriptionStream } from '@/services/api/live'
+// Live batch mode: final transcript only; no SSE stream
 
 interface UploadFile {
   id: string
@@ -17,9 +17,10 @@ interface UploadFile {
 
 interface UploadProps {
   onUploadComplete?: () => void
+  onNavigate?: (page: 'dashboard' | 'upload' | 'results') => void
 }
 
-const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
+const Upload: React.FC<UploadProps> = ({ onUploadComplete, onNavigate }) => {
   const [files, setFiles] = useState<UploadFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -356,7 +357,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadComplete }) => {
           {/* Live Mic (beta) */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <h4 className="font-medium text-yellow-900 mb-2">🎤 Live Mic (beta)</h4>
-            <LiveMicPanel />
+            <LiveMicPanel onNavigate={onNavigate} />
           </div>
 
           {/* Return to Dashboard Button */}
@@ -390,28 +391,42 @@ const processingStages = ['Processing audio…', 'Transcribing speech…', 'Runn
 
 export default Upload
 
-function LiveMicPanel() {
+function LiveMicPanel({ onNavigate }: { onNavigate?: (page: 'dashboard' | 'upload' | 'results') => void }) {
   const [recording, setRecording] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const { text, completed, error: sseError, events, partials } = useTranscriptionStream(sessionId)
+  // Batch-only live mic (no SSE): hold final transcript returned by /live/stop
+  const [finalText, setFinalText] = useState<string>("")
+  const [processingFinal, setProcessingFinal] = useState(false)
+  const [callId, setCallId] = useState<string | null>(null)
 
   const start = useCallback(async () => {
     try {
       setError(null)
+      console.log('[LIVE] start(): creating session…')
       // Start session
       const res = await apiClient.post('/api/v1/live/start')
       const sid = res.data?.session_id as string
       if (!sid) throw new Error('Failed to create session')
       setSessionId(sid)
+      console.log('[LIVE] start(): session created', { sessionId: sid })
 
       // Get mic
+      console.log('[LIVE] start(): requesting mic via getUserMedia')
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      const preferredMime = 'audio/webm;codecs=opus'
+      const mimeSupported = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(preferredMime)
+      const recorderOptions = mimeSupported ? { mimeType: preferredMime } : undefined
+      const mr = recorderOptions ? new MediaRecorder(stream, recorderOptions) : new MediaRecorder(stream)
       mediaRef.current = mr
+      console.log('[LIVE] start(): MediaRecorder ready', {
+        mimeType: mr.mimeType,
+        requestedMime: mimeSupported ? preferredMime : 'default',
+        state: mr.state
+      })
 
       mr.ondataavailable = async (ev: BlobEvent) => {
         try {
@@ -419,20 +434,31 @@ function LiveMicPanel() {
           const s = sessionId || sid
           if (!s) return
           const blob = ev.data
-          if (!blob || blob.size === 0) return
+          if (!blob || blob.size === 0) {
+            console.warn('[LIVE] ondataavailable: empty blob skipped')
+            return
+          }
+          console.log('[LIVE] ondataavailable: chunk ready', { size: blob.size, type: blob.type })
           const fd = new FormData()
           // Name chunk with timestamp to aid backend debugging
-          const file = new File([blob], `chunk_${Date.now()}.webm`, { type: blob.type })
+          const extension = blob.type === 'audio/mp4' ? 'm4a' : 'webm'
+          const file = new File([blob], `chunk_${Date.now()}.${extension}`, { type: blob.type })
           fd.append('file', file)
+          console.log('[LIVE] uploading chunk…', { sessionId: s, filename: file.name, size: file.size })
+          const t0 = performance.now()
           await apiClient.post(`/api/v1/live/chunk?session_id=${encodeURIComponent(s)}`, fd)
+          const dt = Math.round(performance.now() - t0)
+          console.log('[LIVE] chunk upload done', { ms: dt })
         } catch (e) {
-          console.warn('chunk upload failed', e)
+          console.warn('[LIVE] chunk upload failed', e)
         }
       }
-      mr.start(2000) // 2s chunks
+      mr.start(4000) // 4s chunks
+      console.log('[LIVE] MediaRecorder started with 4000ms timeslice')
       setRecording(true)
     } catch (e: any) {
       setError(e?.message || 'Failed to start recording')
+      console.error('[LIVE] start() failed', e)
       try { mediaRef.current?.stop() } catch {}
       try { streamRef.current?.getTracks().forEach(t => t.stop()) } catch {}
       setRecording(false)
@@ -442,16 +468,39 @@ function LiveMicPanel() {
 
   const stop = useCallback(async () => {
     try {
+      console.log('[LIVE] stop(): stopping recorder and mic…')
+      // Flush any buffered data and stop
+      try { mediaRef.current?.requestData?.() } catch {}
       mediaRef.current?.stop()
       streamRef.current?.getTracks().forEach(t => t.stop())
     } catch {}
     setRecording(false)
+    setProcessingFinal(true)
+    setFinalText("")
     try {
+      // Give a brief moment for the last chunk upload to complete
+      console.log('[LIVE] stop(): waiting 800ms for last chunk to finish uploading…')
+      await new Promise(r => setTimeout(r, 800))
       if (sessionId) {
-        await apiClient.post(`/api/v1/live/stop?session_id=${encodeURIComponent(sessionId)}`)
+        console.log('[LIVE] stop(): calling /live/stop', { sessionId })
+        const t0 = performance.now()
+        const res = await apiClient.post(`/api/v1/live/stop?session_id=${encodeURIComponent(sessionId)}`)
+        const dt = Math.round(performance.now() - t0)
+        const txt = (res.data?.final_text as string) || ""
+        const cid = (res.data?.call_id as string) || null
+        const chunksCount = res.data?.chunks_count
+        const concatOk = res.data?.concat_ok
+        const durationSec = res.data?.duration_seconds
+        const transcriptPath = res.data?.transcript_path
+        const combinedPath = res.data?.combined_path
+        console.log('[LIVE] stop(): response received', { ms: dt, chunksCount, concatOk, durationSec, callId: cid, transcriptPath, combinedPath, textLen: txt.length })
+        setFinalText(txt)
+        setCallId(cid)
       }
     } catch (e) {
-      console.warn('stop failed', e)
+      console.warn('[LIVE] stop() failed', e)
+    } finally {
+      setProcessingFinal(false)
     }
   }, [sessionId])
 
@@ -468,14 +517,29 @@ function LiveMicPanel() {
         )}
       </div>
       {error && <div className="text-xs text-red-700 mb-2">{error}</div>}
-      {sseError && <div className="text-xs text-red-700 mb-2">SSE error: {sseError}</div>}
-      {sessionId && (
-        <div className="text-xs text-gray-500 mb-1">Events: {events} • Partials: {partials}</div>
-      )}
       <div className="text-sm text-gray-800 whitespace-pre-wrap min-h-[2rem]">
-        {text || (recording ? 'Listening…' : 'Press Record to start')}
+        {recording
+          ? 'Listening…'
+          : processingFinal
+            ? 'Processing final transcript…'
+            : (finalText || (sessionId ? 'No transcript available' : 'Press Record to start'))}
       </div>
-      {completed && <div className="text-xs text-green-700 mt-1">Completed</div>}
+      {!recording && !processingFinal && finalText && (
+        <div className="flex items-center gap-3 mt-1">
+          <div className="text-xs text-green-700">Completed</div>
+          {callId && (
+            <button
+              onClick={() => {
+                console.log('[LIVE] navigate: View in Results clicked', { callId })
+                onNavigate && onNavigate('results')
+              }}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              View in Results
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
