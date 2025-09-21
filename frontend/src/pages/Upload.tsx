@@ -34,6 +34,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [uploadedCallId, setUploadedCallId] = useState<string | null>(null)
   const [copied, setCopied] = useState<boolean>(false)
   const [newlyCompleted, setNewlyCompleted] = useState<string[]>([])
+  const [showFormattedText, setShowFormattedText] = useState<boolean>(true)
 
   // LocalStorage functions for state persistence
   const STORAGE_KEY = 'signalhub_upload_files'
@@ -147,7 +148,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
     }
   }, [])
 
-  // Copy transcript to clipboard
+  // Copy transcript to clipboard (always use raw text)
   const copyTranscript = useCallback(async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -220,6 +221,58 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       return f
     }))
   }, [updateFiles])
+
+  // Format transcript text for better readability
+  const formatTranscriptText = useCallback((text: string): string => {
+    if (!text || text.trim().length === 0) return text
+
+    let formatted = text.trim()
+
+    // Clean up multiple spaces
+    formatted = formatted.replace(/\s+/g, ' ')
+
+    // Add proper spacing after punctuation if missing
+    formatted = formatted.replace(/([.!?])([A-Za-z])/g, '$1 $2')
+    formatted = formatted.replace(/([,;:])([A-Za-z])/g, '$1 $2')
+
+    // Capitalize first letter of each sentence
+    formatted = formatted.replace(/([.!?]\s+)([a-z])/g, (_, p1, p2) => p1 + p2.toUpperCase())
+
+    // Ensure first letter is capitalized
+    formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1)
+
+    // Split into sentences and create paragraphs
+    const sentences = formatted.split(/([.!?]+)/).filter(s => s.trim().length > 0)
+    const paragraphs: string[] = []
+    let currentParagraph = ''
+
+    for (let i = 0; i < sentences.length; i += 2) {
+      const sentence = sentences[i]?.trim() || ''
+      const punctuation = sentences[i + 1]?.trim() || ''
+      
+      if (sentence) {
+        const fullSentence = sentence + punctuation
+        currentParagraph += fullSentence + ' '
+
+        // Create paragraph break every 3-4 sentences or on natural pauses
+        if (currentParagraph.split(/[.!?]/).length > 3 || 
+            fullSentence.includes('right') || 
+            fullSentence.includes('okay') ||
+            fullSentence.includes('so')) {
+          paragraphs.push(currentParagraph.trim())
+          currentParagraph = ''
+        }
+      }
+    }
+
+    // Add remaining text as final paragraph
+    if (currentParagraph.trim()) {
+      paragraphs.push(currentParagraph.trim())
+    }
+
+    // Join paragraphs with double line breaks
+    return paragraphs.join('\n\n')
+  }, [])
 
   // Cycle processing label while any file is in 'processing'
   useEffect(() => {
@@ -725,6 +778,19 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
             {/* Action buttons - only show when transcript exists */}
             {liveTranscript && (
               <div className="flex items-center gap-2 relative">
+                {/* Formatting toggle */}
+                <button
+                  onClick={() => setShowFormattedText(!showFormattedText)}
+                  className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                    showFormattedText 
+                      ? 'bg-blue-100 text-blue-700 border-blue-300' 
+                      : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                  }`}
+                  title={showFormattedText ? 'Switch to raw text' : 'Switch to formatted text'}
+                >
+                  {showFormattedText ? '📝 Formatted' : '📄 Raw'}
+                </button>
+                
                 <button
                   onClick={copyTranscript}
                   className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
@@ -757,7 +823,9 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
             ) : liveTranscript ? (
               <div className="space-y-2">
                 <div className="text-xs uppercase tracking-wide text-gray-400">{liveSource === 'mic' ? 'Live Mic' : 'Import'} {liveCallId ? `• ${liveCallId.slice(0, 8)}` : ''}</div>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{liveTranscript}</p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap text-left">
+                  {showFormattedText ? formatTranscriptText(liveTranscript) : liveTranscript}
+                </p>
               </div>
             ) : (
               <p className="text-sm text-gray-500">No transcript available yet. Capture audio or upload a file to see the transcription.</p>
