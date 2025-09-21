@@ -30,6 +30,7 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
   const [liveLoading, setLiveLoading] = useState<boolean>(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [uploadedCallId, setUploadedCallId] = useState<string | null>(null)
+  const [copied, setCopied] = useState<boolean>(false)
 
   // Fetch transcript for uploaded file
   const fetchUploadedTranscript = useCallback(async (callId: string) => {
@@ -54,6 +55,52 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
       setLiveLoading(false)
     }
   }, [])
+
+  // Copy transcript to clipboard
+  const copyTranscript = useCallback(async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(liveTranscript)
+      } else {
+        // Fallback for older browsers
+        const ta = document.createElement('textarea')
+        ta.value = liveTranscript
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000) // Reset after 2 seconds
+    } catch (error) {
+      console.error('Copy failed:', error)
+    }
+  }, [liveTranscript])
+
+  // Download transcript as text file
+  const downloadTranscript = useCallback(() => {
+    try {
+      const blob = new Blob([liveTranscript], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      
+      // Generate filename based on source and call ID
+      const source = liveSource === 'mic' ? 'live-mic' : 'upload'
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+      a.download = `${source}-${liveCallId?.slice(0, 8) || timestamp}.txt`
+      
+      a.href = url
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download failed:', error)
+    }
+  }, [liveTranscript, liveSource, liveCallId])
 
   // Cycle processing label while any file is in 'processing'
   useEffect(() => {
@@ -430,12 +477,41 @@ const Capture: React.FC<CaptureProps> = ({ onUploadComplete, onNavigate }) => {
 
         {/* Live transcription panel */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-2xl">📝</span>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
-              <p className="text-sm text-gray-500">Latest transcript will appear here after recording or import completes.</p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">📝</span>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
+                <p className="text-sm text-gray-500">Latest transcript will appear here after recording or import completes.</p>
+              </div>
             </div>
+            
+            {/* Action buttons - only show when transcript exists */}
+            {liveTranscript && (
+              <div className="flex items-center gap-2 relative">
+                <button
+                  onClick={copyTranscript}
+                  className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
+                  title="Copy transcript"
+                >
+                  <img src={`${import.meta.env.BASE_URL}copy_icon.png`} alt="Copy" className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={downloadTranscript}
+                  className="p-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
+                  title="Download transcript"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </button>
+                {copied && (
+                  <div className="absolute -bottom-8 right-0 px-2 py-1 rounded bg-green-100 text-green-700 text-xs shadow">
+                    Copied!
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center">
             {liveLoading ? (
