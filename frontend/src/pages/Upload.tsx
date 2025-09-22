@@ -953,7 +953,7 @@ function LiveMicPanel({
       mr.ondataavailable = async (ev: BlobEvent) => {
         try {
           if (!sessionId && sid) setSessionId(sid)
-          const s = sessionId || sid
+          const s = sid  // Always use the new session ID from this recording
           if (!s) return
           const blob = ev.data
           if (!blob || blob.size === 0) {
@@ -965,7 +965,7 @@ function LiveMicPanel({
           const extension = blob.type === 'audio/mp4' ? 'm4a' : 'webm'
           const file = new File([blob], `chunk_${Date.now()}.${extension}`, { type: blob.type })
           fd.append('file', file)
-          console.log('[LIVE] uploading chunk…', { sessionId: s, filename: file.name, size: file.size })
+          console.log('[LIVE] uploading chunk…', { sessionId: s, filename: file.name, size: file.size, note: 'Using new session ID from current recording' })
           const t0 = performance.now()
           await apiClient.post(`/api/v1/live/chunk?session_id=${encodeURIComponent(s)}`, fd)
           const dt = Math.round(performance.now() - t0)
