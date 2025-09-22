@@ -104,6 +104,8 @@ async function startBackendDev() {
     SIGNALHUB_ENABLE_TRANSCRIPTION: '1',
     SIGNALHUB_LIVE_TRANSCRIPTION: '1',
     SIGNALHUB_LIVE_MIC: '1',
+    // Batch-only live mic to ensure full transcript at stop()
+    SIGNALHUB_LIVE_BATCH_ONLY: '1',
   }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
@@ -133,6 +135,8 @@ async function startBackendProd() {
     SIGNALHUB_ENABLE_TRANSCRIPTION: '1',
     SIGNALHUB_LIVE_TRANSCRIPTION: '1',
     SIGNALHUB_LIVE_MIC: '1',
+    // Batch-only live mic to ensure full transcript at stop()
+    SIGNALHUB_LIVE_BATCH_ONLY: '1',
     // Ensure Whisper uses bundled cache for offline models
     XDG_CACHE_HOME: path.join(process.resourcesPath, 'whisper_cache'),
   }

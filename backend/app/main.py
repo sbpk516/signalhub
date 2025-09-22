@@ -89,6 +89,8 @@ async def startup_event():
 
         # Log feature flags
         logger.info(f"Live transcription (SSE) enabled: {is_live_transcription_enabled()}")
+        logger.info(f"Live mic enabled: {is_live_mic_enabled()}")
+        logger.info(f"Live mic batch-only: {is_live_batch_only()}")
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
@@ -119,6 +121,7 @@ async def health_check():
             "features": {
                 "live_transcription": is_live_transcription_enabled(),
                 "live_mic": is_live_mic_enabled(),
+                "live_mic_batch_only": is_live_batch_only(),
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -393,6 +396,7 @@ async def live_chunk(session_id: str, file: UploadFile = File(...)):
 
         if is_live_batch_only():
             # Batch-only mode: do not transcribe or emit SSE during recording
+            # Always defer transcription to stop(); never attempt per-chunk convert
             return {"ok": True, "chunk_index": idx, "batch_only": True}
         else:
             # Give filesystem a moment to flush renamed chunk before conversion
@@ -420,10 +424,10 @@ async def live_chunk(session_id: str, file: UploadFile = File(...)):
                 })
                 return {"ok": True, "chunk_index": idx, "text_length": len(text)}
             else:
+                # For non-batch, later chunks are headerless WebM clusters; skip any conversion/transcription
                 logger.info(
-                    f"[MIC] chunk skip convert session_id={session_id} idx={idx} reason=webm-cluster-only"
+                    f"[MIC] chunk skip convert session_id={session_id} idx={idx} reason=headerless-webm-cluster"
                 )
-                # Defer transcription to batch concat at stop()
                 live_sessions.set_partial(session_id, idx, "")
                 return {"ok": True, "chunk_index": idx, "skipped_conversion": True}
     except HTTPException:
@@ -453,6 +457,24 @@ async def live_stop(session_id: str):
                 await event_bus.complete(session_id)
                 return {"session_id": session_id, "final_text": ""}
 
+            # Grace period: allow late chunks to finish writing (up to ~1.5s)
+            try:
+                import time
+                t_start = time.time()
+                last_count = len(chunks)
+                while time.time() - t_start < 1.5:
+                    # Re-scan chunks list
+                    cur = list(sess.chunks)
+                    if len(cur) != last_count:
+                        last_count = len(cur)
+                        chunks = cur
+                        await asyncio.sleep(0.1)
+                    else:
+                        await asyncio.sleep(0.1)
+                logger.info(f"[MIC] stop quiesce complete session_id={session_id} chunks_count={len(chunks)}")
+            except Exception:
+                pass
+
             # 1) Concatenate raw WebM chunks into a single file (MediaRecorder blobs share the first header)
             combined_webm = sess.dir / "combined.webm"
             try:
@@ -479,6 +501,8 @@ async def live_stop(session_id: str):
                 cmd = [
                     "ffmpeg",
                     "-i", str(combined_webm),
+                    "-fflags", "+genpts",
+                    "-avoid_negative_ts", "make_zero",
                     "-ar", "16000",
                     "-ac", "1",
                     "-y", str(combined_path),

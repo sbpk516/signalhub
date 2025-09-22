@@ -916,6 +916,10 @@ function LiveMicPanel({
   const [error, setError] = useState<string | null>(null)
   const mediaRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  // Track in-flight chunk uploads to avoid truncation at stop
+  const pendingUploadsRef = useRef<number>(0)
+  const uploadsSettledResolveRef = useRef<null | (() => void)>(null)
+  const uploadsSettledPromiseRef = useRef<Promise<void> | null>(null)
   // Batch-only live mic (no SSE): hold final transcript returned by /live/stop
   const [finalText, setFinalText] = useState<string>("")
   const [processingFinal, setProcessingFinal] = useState(false)
@@ -967,7 +971,24 @@ function LiveMicPanel({
           fd.append('file', file)
           console.log('[LIVE] uploading chunk…', { sessionId: s, filename: file.name, size: file.size, note: 'Using new session ID from current recording' })
           const t0 = performance.now()
-          await apiClient.post(`/api/v1/live/chunk?session_id=${encodeURIComponent(s)}`, fd)
+          // Initialize a settle promise the first time we upload
+          if (!uploadsSettledPromiseRef.current) {
+            uploadsSettledPromiseRef.current = new Promise<void>(resolve => {
+              uploadsSettledResolveRef.current = resolve
+            })
+          }
+          pendingUploadsRef.current += 1
+          try {
+            await apiClient.post(`/api/v1/live/chunk?session_id=${encodeURIComponent(s)}`, fd)
+          } finally {
+            pendingUploadsRef.current -= 1
+            if (pendingUploadsRef.current <= 0 && uploadsSettledResolveRef.current) {
+              // Resolve and reset so a new recording can recreate it
+              uploadsSettledResolveRef.current()
+              uploadsSettledResolveRef.current = null
+              uploadsSettledPromiseRef.current = null
+            }
+          }
           const dt = Math.round(performance.now() - t0)
           console.log('[LIVE] chunk upload done', { ms: dt })
         } catch (e) {
@@ -1001,8 +1022,20 @@ function LiveMicPanel({
     onTranscriptStart && onTranscriptStart()
     console.log('[DEBUG] LiveMicPanel stop() - onTranscriptStart completed')
     try {
-      console.log('[LIVE] stop(): waiting 800ms for last chunk to finish uploading…')
-      await new Promise(r => setTimeout(r, 800))
+      // Wait a little for MediaRecorder to emit the final dataavailable
+      console.log('[LIVE] stop(): waiting 1200ms for recorder flush…')
+      await new Promise(r => setTimeout(r, 1200))
+      // Then wait for any in-flight chunk uploads to settle (with a cap)
+      const waitForUploads = async (timeoutMs = 5000) => {
+        if (pendingUploadsRef.current <= 0) return
+        const p = uploadsSettledPromiseRef.current || new Promise<void>(resolve => setTimeout(resolve, 0))
+        await Promise.race([
+          p,
+          new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+        ])
+      }
+      console.log('[LIVE] stop(): waiting for in-flight chunk uploads to settle…', { pending: pendingUploadsRef.current })
+      await waitForUploads(5000)
       if (sessionId) {
         console.log('[LIVE] stop(): calling /live/stop', { sessionId })
         const t0 = performance.now()
