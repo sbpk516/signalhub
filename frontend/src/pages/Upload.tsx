@@ -920,8 +920,7 @@ function LiveMicPanel({
   const pendingUploadsRef = useRef<number>(0)
   const uploadsSettledResolveRef = useRef<null | (() => void)>(null)
   const uploadsSettledPromiseRef = useRef<Promise<void> | null>(null)
-  // Batch-only live mic (no SSE): hold final transcript returned by /live/stop
-  const [finalText, setFinalText] = useState<string>("")
+  // Batch-only live mic (no SSE): we rely on parent to show transcript
   const [processingFinal, setProcessingFinal] = useState(false)
   const [callId, setCallId] = useState<string | null>(null)
 
@@ -1017,7 +1016,6 @@ function LiveMicPanel({
     } catch {}
     setRecording(false)
     setProcessingFinal(true)
-    setFinalText('')
     console.log('[DEBUG] LiveMicPanel stop() - calling onTranscriptStart')
     onTranscriptStart && onTranscriptStart()
     console.log('[DEBUG] LiveMicPanel stop() - onTranscriptStart completed')
@@ -1049,7 +1047,6 @@ function LiveMicPanel({
         const transcriptPath = res.data?.transcript_path
         const combinedPath = res.data?.combined_path
         console.log('[LIVE] stop(): response received', { ms: dt, chunksCount, concatOk, durationSec, callId: cid, transcriptPath, combinedPath, textLen: txt.length })
-        setFinalText(txt)
         setCallId(cid)
         console.log('[DEBUG] LiveMicPanel stop() - calling onTranscriptComplete with:', { textLength: txt.length, callId: cid })
         onTranscriptComplete && onTranscriptComplete({ text: txt, callId: cid })
@@ -1084,26 +1081,12 @@ function LiveMicPanel({
       <div className="text-sm text-gray-800 whitespace-pre-wrap min-h-[2rem]">
         {recording
           ? 'Listening…'
-          : processingFinal
-            ? 'Processing final transcript…'
-            : (finalText || (sessionId ? 'No transcript available' : 'Press Record to start'))}
+      : processingFinal
+        ? 'Processing final transcript…'
+        : callId
+          ? 'Transcript ready — see Live Transcript panel or Transcripts tab.'
+          : (sessionId ? 'No transcript available' : 'Press Record to start')}
       </div>
-      {!recording && !processingFinal && finalText && (
-        <div className="flex items-center gap-3 mt-1">
-          <div className="text-xs text-green-700">Completed</div>
-          {callId && (
-            <button
-              onClick={() => {
-                console.log('[LIVE] navigate: View in Transcripts clicked', { callId })
-                onNavigate && onNavigate('transcripts')
-              }}
-              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              View Transcripts
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }

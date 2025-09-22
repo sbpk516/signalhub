@@ -45,12 +45,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [pendingTotal, setPendingTotal] = useState<number>(0)
   const [recent, setRecent] = useState<any[]>([])
   const [durationSum, setDurationSum] = useState<number>(0)
+  const retryTimeout = React.useRef<number | null>(null)
 
   useEffect(() => {
     const waitForHealth = async () => {
       // Retry /health briefly on app start to avoid initial network race
-      const maxAttempts = 10
-      const delayMs = 300
+      const maxAttempts = 20
+      const delayMs = 500
       const isFileProtocol = typeof window !== 'undefined' && window.location?.protocol === 'file:'
       const electronPort = (typeof window !== 'undefined' && (window as any)?.api?.backend?.port) || null
       const healthUrl = isFileProtocol && electronPort
@@ -75,7 +76,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         // Ensure backend is ready (avoids brief Network Error on first paint)
         const healthy = await waitForHealth()
         if (!healthy) {
-          throw new Error('Backend not ready')
+          setLoading(false)
+          setError('Backend is starting...')
+          if (retryTimeout.current) window.clearTimeout(retryTimeout.current)
+          retryTimeout.current = window.setTimeout(() => {
+            load()
+          }, 1500)
+          return
         }
 
         // Accurate totals using filtered queries for counts
@@ -122,6 +129,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       }
     }
     load()
+
+    return () => {
+      if (retryTimeout.current) {
+        window.clearTimeout(retryTimeout.current)
+      }
+    }
   }, [])
 
   const stats: Stat[] = useMemo(() => ([
