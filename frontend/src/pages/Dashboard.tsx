@@ -183,9 +183,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       {/* Page Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-            <p className="text-lg text-gray-600">Welcome to SignalHub - Your Audio Analysis Platform</p>
+          <div className="flex-1 space-y-2">
+            <span className="inline-flex items-center px-3 py-1 text-sm font-semibold uppercase tracking-widest text-blue-600 bg-blue-50 border border-blue-200 rounded-full">
+              Welcome
+            </span>
+            <h1 className="text-3xl font-semibold tracking-tight bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+              SignalHub · Your Audio Analysis Platform
+            </h1>
+            <p className="text-sm text-gray-500">Capture audio, transcribe instantly, and surface insights the moment your sessions finish.</p>
           </div>
           <div className="mt-4 lg:mt-0 lg:ml-6">
             <div className="flex items-center space-x-4 text-sm text-gray-500">
