@@ -13,7 +13,7 @@ from datetime import datetime
 import logging
 from fastapi import UploadFile
 
-from .config import settings, is_live_transcription_enabled
+from .config import settings, is_live_transcription_enabled, is_live_batch_only
 from .upload import AudioUploadHandler
 from .audio_processor import AudioProcessor
 from .whisper_processor import WhisperProcessor
@@ -442,9 +442,10 @@ class AudioProcessingPipeline:
             self.db_integration.update_call_status(call_id, "transcribing")
             
             live_enabled = is_live_transcription_enabled()
-            logger.info(f"Live transcription enabled for call {call_id}: {live_enabled}")
+            batch_only = is_live_batch_only()
+            logger.info(f"Live transcription enabled for call {call_id}: {live_enabled}; batch_only={batch_only}")
 
-            if live_enabled:
+            if live_enabled and not batch_only:
                 # Chunked progressive transcription with SSE emits
                 import os
                 chunk_sec = int(os.getenv("SIGNALHUB_LIVE_CHUNK_SEC", "15") or 15)

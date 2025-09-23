@@ -567,6 +567,22 @@ async def live_stop(session_id: str):
             except Exception as e:
                 logger.warning(f"[MIC] failed to store transcript for {call_id}: {e}")
 
+            analysis_summary = None
+            try:
+                if final_text:
+                    logger.info(f"[MIC] running NLP analysis for session_id={session_id}")
+                    analysis_summary = await nlp_processor.analyze_text(final_text, call_id)
+                    store_result = db_integration.store_nlp_analysis(call_id, analysis_summary)
+                    if not store_result.get('store_success'):
+                        logger.warning(
+                            f"[MIC] failed to persist NLP analysis for {call_id}: {store_result.get('error') or 'unknown error'}"
+                        )
+                else:
+                    logger.info(f"[MIC] skipping NLP analysis for session_id={session_id}: empty transcript")
+            except Exception as e:
+                logger.warning(f"[MIC] NLP analysis failed for {call_id}: {e}")
+                analysis_summary = None
+
             # Update duration and mark completed
             try:
                 analysis = audio_processor.analyze_audio_file(combined_to_use)
@@ -590,6 +606,7 @@ async def live_stop(session_id: str):
                 "chunks_count": len(chunks),
                 "concat_ok": concat_ok,
                 "duration_seconds": duration,
+                "nlp_analysis": analysis_summary,
             }
         else:
             # Legacy incremental mode: concatenate partials already captured

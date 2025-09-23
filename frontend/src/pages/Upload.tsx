@@ -124,17 +124,30 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
   }, [])
 
   // Fetch transcript for uploaded file
-  const fetchUploadedTranscript = useCallback(async (callId: string) => {
+  const fetchUploadedTranscript = useCallback(async (callId: string, attempt = 0) => {
     try {
       console.log(`[CAPTURE] Fetching transcript for call_id: ${callId}`)
       setLiveLoading(true)
       setLiveError(null)
       
       const response = await apiClient.get(`/api/v1/pipeline/results/${callId}`)
-      const transcriptText = response.data.data.transcription?.transcription_text || ''
+      const data = response.data?.data || {}
+      const status = data.status
+      const transcriptText = data.transcription?.transcription_text || ''
       
-      console.log(`[CAPTURE] Transcript fetched:`, { callId, textLength: transcriptText.length })
-      
+      console.log(`[CAPTURE] Transcript fetched:`, { callId, status, textLength: transcriptText.length })
+
+      if ((status !== 'completed' || !transcriptText) && attempt < 4) {
+        console.log(`[CAPTURE] Transcript not ready (status=${status}, len=${transcriptText.length}), retry ${attempt + 1}`)
+        await new Promise(r => setTimeout(r, 1500))
+        return fetchUploadedTranscript(callId, attempt + 1)
+      }
+
+      if (status !== 'completed' || !transcriptText) {
+        console.log(`[CAPTURE] Transcript unavailable after retries for ${callId}`)
+        return
+      }
+
       // Populate Live Transcription box
       setLiveTranscript(transcriptText)
       setLiveSource('upload')
@@ -339,6 +352,9 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
                   ? { ...f, status: 'completed', progress: 100 }
                   : f
               ))
+              if (file.callId) {
+                fetchUploadedTranscript(file.callId)
+              }
               // Add to newly completed notifications
               setNewlyCompleted(prev => [...prev, file.id])
               // Remove notification after 5 seconds
@@ -366,7 +382,7 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
       console.log(`[CAPTURE] Stopping polling for ${processingFiles.length} files`)
       clearInterval(pollInterval)
     }
-  }, [files, pollFileStatus, updateFiles])
+  }, [files, pollFileStatus, updateFiles, fetchUploadedTranscript])
 
   const processingLabel = processingStages[processingTick]
 
@@ -468,10 +484,10 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
         setUploadedCallId(callId)
       }
 
-      // Update file status to completed
+      // Keep file in processing state until pipeline finishes
       updateFiles(prev => prev.map(f => 
         f.id === file.id 
-          ? { ...f, status: 'completed', progress: 100, callId }
+          ? { ...f, status: 'processing', progress: 100, callId }
           : f
       ))
 
