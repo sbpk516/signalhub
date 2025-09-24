@@ -34,6 +34,8 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
   const [copied, setCopied] = useState<boolean>(false)
   const [newlyCompleted, setNewlyCompleted] = useState<string[]>([])
   const [showFormattedText, setShowFormattedText] = useState<boolean>(true)
+  const [modelStatus, setModelStatus] = useState<'unknown' | 'not_loaded' | 'loading' | 'ready'>('unknown')
+  const [modelStatusMessage, setModelStatusMessage] = useState<string | null>(null)
 
   // LocalStorage functions for state persistence
   const STORAGE_KEY = 'signalhub_upload_files'
@@ -96,6 +98,73 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
     })
   }, [saveFilesToStorage])
 
+  const refreshModelStatus = useCallback(async (): Promise<'ready' | 'loading' | 'not_loaded' | 'unknown'> => {
+    try {
+      const response = await apiClient.get('/health')
+      const models = response.data?.models ?? {}
+      const whisperStatus = models.whisper?.status as string | undefined
+      const nlpStatus = models.nlp?.status as string | undefined
+      const statuses = [whisperStatus, nlpStatus].filter(Boolean) as string[]
+
+      let nextStatus: 'ready' | 'loading' | 'not_loaded' | 'unknown' = 'unknown'
+      if (statuses.length && statuses.every(status => status === 'ready')) {
+        nextStatus = 'ready'
+      } else if (statuses.some(status => status === 'loading')) {
+        nextStatus = 'loading'
+      } else if (statuses.some(status => status === 'not_loaded')) {
+        nextStatus = 'not_loaded'
+      }
+
+      setModelStatus(nextStatus)
+
+      if (nextStatus === 'loading') {
+        setModelStatusMessage('Preparing speech model… first load can take up to a minute.')
+      } else if (nextStatus === 'not_loaded') {
+        setModelStatusMessage('Speech model unavailable. Uploads will resume automatically once it finishes loading.')
+      } else if (nextStatus === 'unknown') {
+        setModelStatusMessage('Checking speech model status…')
+      } else {
+        setModelStatusMessage(null)
+      }
+
+      return nextStatus
+    } catch (error) {
+      console.error('[CAPTURE] Failed to fetch health status', error)
+      setModelStatus('unknown')
+      setModelStatusMessage('Checking speech model status…')
+      return 'unknown'
+    }
+  }, [])
+
+  const ensureModelsReady = useCallback(async (maxWaitMs = 20000) => {
+    const deadline = Date.now() + maxWaitMs
+    let status = await refreshModelStatus()
+    if (status === 'ready') {
+      return true
+    }
+
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      status = await refreshModelStatus()
+      if (status === 'ready') {
+        return true
+      }
+    }
+
+    return status === 'ready'
+  }, [refreshModelStatus])
+
+  useEffect(() => {
+    refreshModelStatus()
+    const intervalId = window.setInterval(() => {
+      refreshModelStatus()
+    }, 5000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [refreshModelStatus])
+
   // Poll backend for file processing status
   const pollFileStatus = useCallback(async (callId: string): Promise<{
     status: 'processing' | 'completed' | 'failed'
@@ -129,7 +198,15 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
       console.log(`[CAPTURE] Fetching transcript for call_id: ${callId}`)
       setLiveLoading(true)
       setLiveError(null)
-      
+
+      const ready = await ensureModelsReady()
+      if (!ready) {
+        console.log('[CAPTURE] Speech model still warming up, delaying transcript fetch')
+        setLiveLoading(false)
+        setLiveError('Speech model is still warming up. Please try again in a moment.')
+        return
+      }
+
       const response = await apiClient.get(`/api/v1/pipeline/results/${callId}`)
       const data = response.data?.data || {}
       const status = data.status
@@ -548,6 +625,29 @@ const Capture: React.FC<CaptureProps> = ({ onNavigate }) => {
             Record live or import existing audio for transcription and analysis. Supported formats: WAV, MP3, M4A, FLAC
           </p>
         </div>
+
+        {modelStatusMessage && (
+          <div
+            className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
+              modelStatus === 'loading'
+                ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
+                : modelStatus === 'not_loaded'
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-blue-200 bg-blue-50 text-blue-700'
+            }`}
+          >
+            <span
+              className={`inline-flex h-2 w-2 rounded-full ${
+                modelStatus === 'loading'
+                  ? 'bg-yellow-400 animate-pulse'
+                  : modelStatus === 'not_loaded'
+                    ? 'bg-red-400'
+                    : 'bg-blue-400 animate-pulse'
+              }`}
+            />
+            <span>{modelStatusMessage}</span>
+          </div>
+        )}
 
         {/* Notifications for newly completed files */}
         {newlyCompleted.length > 0 && (

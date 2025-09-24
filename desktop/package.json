@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "concurrently -k -n VITE,ELECTRON -c \"magenta,cyan\" \"npm --prefix ../frontend run dev\" \"wait-on tcp:127.0.0.1:3000 && electron .\"",
     "start": "electron .",
-    "pack": "electron-builder --dir -c electron-builder.yml",
+    "pack": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder --dir -c electron-builder.yml",
     "prepack:check": "bash ../scripts/check-prepack.sh",
-    "dist": "npm run prepack:check && electron-builder -c electron-builder.yml"
+    "dist": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

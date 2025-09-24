@@ -5,6 +5,11 @@ Provides comprehensive speech-to-text functionality using OpenAI Whisper.
 import os
 import json
 import os
+import time
+import threading
+_MODULE_IMPORT_STARTED = time.perf_counter()
+_MODULE_IMPORT_ENDED = None
+
 try:
     import whisper  # type: ignore
     import torch  # type: ignore
@@ -25,6 +30,7 @@ from .logging_config import log_function_call, PerformanceMonitor
 
 # Configure logger for this module
 logger = logging.getLogger('signalhub.whisper_processor')
+_MODULE_IMPORT_ENDED = time.perf_counter()
 
 def _transcription_enabled() -> bool:
     return os.getenv("SIGNALHUB_ENABLE_TRANSCRIPTION", "0") == "1"
@@ -68,13 +74,19 @@ class WhisperProcessor:
                 self.device = "cuda" if torch.cuda.is_available() else "cpu"  # type: ignore[attr-defined]
             except Exception:
                 self.device = "cpu"
-        
+
         # Create transcripts directory
         self.transcripts_dir = Path(settings.upload_dir) / "transcripts"
         self.transcripts_dir.mkdir(exist_ok=True)
-        
+
         # Lazy-load model on first use; warn if disabled or libs missing
         self._model_loaded = False
+        self._loading_in_progress = False
+        self._loading_started_ts: Optional[float] = None
+        self._last_load_elapsed: Optional[float] = None
+        self._last_loaded_at: Optional[str] = None
+        self._last_load_error: Optional[str] = None
+        self._load_lock = threading.Lock()
         if not _transcription_enabled():
             logger.warning("Transcription disabled via SIGNALHUB_ENABLE_TRANSCRIPTION=0")
         if not _WHISPER_AVAILABLE:
@@ -85,21 +97,21 @@ class WhisperProcessor:
     def _load_model(self) -> bool:
         """
         Load Whisper model with error handling and fallback options.
-        
+
         Returns:
             True if model loaded successfully, False otherwise
         """
         try:
             logger.info(f"Loading Whisper model: {self.model_name}")
-            
+
             with PerformanceMonitor("whisper_model_loading") as monitor:
                 # Load model with device specification
                 if not _WHISPER_AVAILABLE:
                     raise RuntimeError("Whisper/Torch not available")
                 self.model = whisper.load_model(self.model_name, device=self.device)
-                
+
                 logger.info(f"Whisper model {self.model_name} loaded successfully on {self.device}")
-                
+
                 # Log model information
                 debug_helper.log_debug_info(
                     "whisper_model_loaded",
@@ -110,10 +122,11 @@ class WhisperProcessor:
                         "model_size_mb": sum(p.numel() * p.element_size() for p in self.model.parameters()) / (1024 * 1024)
                     }
                 )
-                
+
                 self._model_loaded = True
+                self._last_load_error = None
                 return True
-                
+
         except Exception as e:
             logger.error(f"Failed to load Whisper model {self.model_name}: {e}")
             debug_helper.capture_exception(
@@ -121,7 +134,7 @@ class WhisperProcessor:
                 e,
                 {"model_name": self.model_name, "device": self.device}
             )
-            
+
             # Try fallback to smaller model
             if self.model_name != "tiny":
                 logger.info(f"Trying fallback to tiny model...")
@@ -130,7 +143,75 @@ class WhisperProcessor:
             else:
                 logger.error("All model loading attempts failed")
                 return False
-    
+
+    def ensure_loaded(self, timeout: Optional[float] = None, *, background: bool = False) -> bool:
+        """Ensure the Whisper model is loaded, loading it if necessary."""
+        if self._model_loaded:
+            return False
+
+        acquired = False
+        start_wait = time.perf_counter()
+        try:
+            if timeout is None:
+                self._load_lock.acquire()
+                acquired = True
+            else:
+                acquired = self._load_lock.acquire(timeout=timeout)
+            if not acquired:
+                waited = time.perf_counter() - start_wait
+                self._last_load_error = f"timeout after {waited:.3f}s waiting for Whisper model load lock"
+                raise TimeoutError(self._last_load_error)
+
+            if self._model_loaded:
+                return False
+
+            self._loading_in_progress = True
+            self._loading_started_ts = time.perf_counter()
+            logger.info(
+                "[WHISPER] model_load status=begin background=%s", background
+            )
+            success = self._load_model()
+            elapsed = time.perf_counter() - (self._loading_started_ts or time.perf_counter())
+            self._last_load_elapsed = elapsed
+            if success:
+                self._last_load_error = None
+                self._last_loaded_at = datetime.now().isoformat()
+                logger.info(
+                    "[WHISPER] model_load status=complete elapsed=%.3fs", elapsed
+                )
+            else:
+                self._last_load_error = "Whisper model failed to load"
+                logger.error(
+                    "[WHISPER] model_load status=failed elapsed=%.3fs", elapsed
+                )
+                raise RuntimeError("Whisper model failed to load")
+            return success
+        finally:
+            self._loading_in_progress = False
+            self._loading_started_ts = None
+            if acquired:
+                self._load_lock.release()
+
+    def get_status(self) -> Dict[str, Any]:
+        """Return current model status for diagnostics and health reporting."""
+        if self._loading_in_progress:
+            status = "loading"
+        elif self._model_loaded:
+            status = "ready"
+        else:
+            status = "not_loaded"
+
+        return {
+            "status": status,
+            "loaded": self._model_loaded,
+            "loading": self._loading_in_progress,
+            "model_name": self.model_name,
+            "device": self.device,
+            "last_load_elapsed": self._last_load_elapsed,
+            "last_loaded_at": self._last_loaded_at,
+            "last_error": self._last_load_error,
+        }
+
     @log_function_call
     def transcribe_audio(
         self, 
@@ -163,19 +244,27 @@ class WhisperProcessor:
                 "transcription_timestamp": datetime.now().isoformat()
             }
 
-        if not self.model:
-            # Lazy load on demand
-            ok = self._load_model()
-            if not ok or not self.model:
-                error_msg = "Whisper model not loaded"
-                logger.error(error_msg)
-                return {
-                    "audio_path": audio_path,
-                    "transcription_success": False,
-                    "error": error_msg,
-                    "transcription_timestamp": datetime.now().isoformat()
-                }
-        
+        try:
+            self.ensure_loaded()
+        except TimeoutError as exc:
+            error_msg = f"Whisper model load timed out: {exc}"
+            logger.error(error_msg)
+            return {
+                "audio_path": audio_path,
+                "transcription_success": False,
+                "error": error_msg,
+                "transcription_timestamp": datetime.now().isoformat()
+            }
+        except Exception as exc:
+            error_msg = f"Whisper model load failed: {exc}"
+            logger.error(error_msg)
+            return {
+                "audio_path": audio_path,
+                "transcription_success": False,
+                "error": error_msg,
+                "transcription_timestamp": datetime.now().isoformat()
+            }
+
         with PerformanceMonitor("whisper_transcription") as monitor:
             try:
                 # Verify audio file exists
@@ -315,10 +404,7 @@ class WhisperProcessor:
         if not _transcription_enabled():
             raise RuntimeError("Transcription disabled via env")
 
-        if not self.model:
-            ok = self._load_model()
-            if not ok or not self.model:
-                raise RuntimeError("Whisper model not loaded")
+        self.ensure_loaded()
 
         # Determine duration (best-effort)
         try:

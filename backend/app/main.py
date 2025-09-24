@@ -1,6 +1,7 @@
 """
 Main FastAPI application for SignalHub.
 """
+import time
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, PlainTextResponse
@@ -12,6 +13,7 @@ import asyncio
 import logging
 import json
 import os
+from typing import Optional
 
 from .config import settings, get_database_url, is_live_transcription_enabled, is_live_mic_enabled, is_live_batch_only
 from .database import get_db, create_tables
@@ -26,6 +28,9 @@ from .live_events import event_bus, sse_format
 from .live_mic import live_sessions
 from .audio_processor import audio_processor
 from .whisper_processor import whisper_processor
+
+_MODULE_IMPORT_STARTED = time.perf_counter()
+_warmup_task: Optional[asyncio.Task] = None
 
 # Create necessary directories first
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -47,6 +52,15 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(), logging.FileHandler(settings.log_file)]
 )
 logger = logging.getLogger(__name__)
+startup_logger = logging.getLogger("signalhub.startup")
+startup_logger.info(
+    "[STARTUP] phase=module_import elapsed=%.3fs", time.perf_counter() - _MODULE_IMPORT_STARTED
+)
+if hasattr(whisper_processor, "_MODULE_IMPORT_STARTED") and hasattr(whisper_processor, "_MODULE_IMPORT_ENDED"):
+    startup_logger.info(
+        "[STARTUP] phase=whisper_module_import elapsed=%.3fs",
+        (whisper_processor._MODULE_IMPORT_ENDED or 0) - whisper_processor._MODULE_IMPORT_STARTED,
+    )
 
 # Create FastAPI app
 app = FastAPI(
@@ -66,9 +80,64 @@ app.add_middleware(
 )
 
 
+async def _run_startup_warmup() -> None:
+    """Warm up heavyweight models in the background after startup."""
+    startup_logger.info("[WARMUP] whisper status=begin")
+    try:
+        loaded = whisper_processor.ensure_loaded(background=True)
+        if loaded:
+            startup_logger.info("[WARMUP] whisper status=complete")
+        else:
+            startup_logger.info("[WARMUP] whisper status=skipped already_loaded=1")
+    except Exception as exc:
+        startup_logger.error(f"[WARMUP] whisper status=failed error={exc}")
+
+    startup_logger.info("[WARMUP] nlp status=begin")
+    try:
+        loaded_nlp = await nlp_processor.ensure_loaded(background=True)
+        if loaded_nlp:
+            startup_logger.info("[WARMUP] nlp status=complete")
+        else:
+            startup_logger.info("[WARMUP] nlp status=skipped already_loaded=1")
+    except Exception as exc:
+        startup_logger.error(f"[WARMUP] nlp status=failed error={exc}")
+
+    startup_logger.info("[WARMUP] status=finished")
+
+
+def _ensure_whisper_ready_for_request(context: str) -> None:
+    """Ensure Whisper is loaded before servicing a request context."""
+    try:
+        loaded = whisper_processor.ensure_loaded()
+        if loaded:
+            logger.info(f"[WHISPER] model load completed for context={context}")
+    except TimeoutError as exc:
+        logger.warning(f"[WHISPER] model load timeout context={context}: {exc}")
+        raise HTTPException(status_code=503, detail="Speech model is still warming up. Please retry shortly.")
+    except Exception as exc:
+        logger.error(f"[WHISPER] model unavailable context={context}: {exc}")
+        raise HTTPException(status_code=500, detail="Speech model is unavailable. Please try again later.")
+
+
+async def _ensure_nlp_ready_for_request(context: str) -> None:
+    """Ensure NLP resources are loaded before servicing a request context."""
+    try:
+        loaded = await nlp_processor.ensure_loaded()
+        if loaded:
+            logger.info(f"[NLP] resources load completed for context={context}")
+    except TimeoutError as exc:
+        logger.warning(f"[NLP] resources load timeout context={context}: {exc}")
+        raise HTTPException(status_code=503, detail="Language analysis is still warming up. Please retry shortly.")
+    except Exception as exc:
+        logger.error(f"[NLP] resources unavailable context={context}: {exc}")
+        raise HTTPException(status_code=500, detail="Language analysis is unavailable. Please try again later.")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup."""
+    start_ts = time.perf_counter()
+    startup_logger.info("[STARTUP] phase=fastapi_startup status=begin")
     logger.info("Starting SignalHub application...")
     try:
         # Log resolved database URL (desktop/sqlite shows file path)
@@ -94,6 +163,39 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise
+    finally:
+        startup_logger.info(
+            "[STARTUP] phase=fastapi_startup status=complete elapsed=%.3fs since_import=%.3fs",
+            time.perf_counter() - start_ts,
+            time.perf_counter() - _MODULE_IMPORT_STARTED,
+        )
+
+    try:
+        loop = asyncio.get_running_loop()
+        global _warmup_task
+        _warmup_task = loop.create_task(_run_startup_warmup())
+        startup_logger.info("[WARMUP] task scheduled")
+    except RuntimeError as exc:
+        startup_logger.warning(f"[WARMUP] failed to schedule task: {exc}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up any background warm-up tasks before shutdown completes."""
+    global _warmup_task
+    if _warmup_task is None:
+        return
+    task = _warmup_task
+    _warmup_task = None
+    if task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        startup_logger.info("[WARMUP] task cancelled on shutdown")
+    except Exception as exc:
+        startup_logger.warning(f"[WARMUP] task raised during shutdown: {exc}")
 
 
 @app.get("/")
@@ -122,6 +224,10 @@ async def health_check():
                 "live_transcription": is_live_transcription_enabled(),
                 "live_mic": is_live_mic_enabled(),
                 "live_mic_batch_only": is_live_batch_only(),
+            },
+            "models": {
+                "whisper": whisper_processor.get_status(),
+                "nlp": nlp_processor.get_status(),
             },
             "timestamp": datetime.now().isoformat()
         }
@@ -403,6 +509,7 @@ async def live_chunk(session_id: str, file: UploadFile = File(...)):
             await asyncio.sleep(0.05)
             if idx == 0:
                 # Convert the first chunk so we can provide an early partial transcript
+                _ensure_whisper_ready_for_request("live_chunk")
                 converted = audio_processor.convert_audio_format(
                     str(sess.chunks[idx]), output_format="wav", sample_rate=16000, channels=1
                 )
@@ -521,6 +628,7 @@ async def live_stop(session_id: str):
                 combined_to_use = str(chunks[0])
 
             # 4) Single transcription pass
+            _ensure_whisper_ready_for_request("live_stop")
             tr = whisper_processor.transcribe_audio(combined_to_use)
             final_text = (tr.get("text") or "").strip() if tr.get("transcription_success") else ""
             logger.info(f"[MIC] stop batch session_id={session_id} final_text_len={len(final_text)}")
@@ -571,6 +679,7 @@ async def live_stop(session_id: str):
             try:
                 if final_text:
                     logger.info(f"[MIC] running NLP analysis for session_id={session_id}")
+                    await _ensure_nlp_ready_for_request("live_stop")
                     analysis_summary = await nlp_processor.analyze_text(final_text, call_id)
                     store_result = db_integration.store_nlp_analysis(call_id, analysis_summary)
                     if not store_result.get('store_success'):
@@ -716,6 +825,7 @@ async def reanalyze_call(call_id: str, db: Session = Depends(get_db)):
         logger.info(f"[REANALYZE] Transcript loaded (len={len(text)}) for call {call_id}")
 
         # Run NLP analysis
+        await _ensure_nlp_ready_for_request("reanalyze")
         analysis = await nlp_processor.analyze_text(text, call_id)
         logger.info(f"[REANALYZE] NLP analysis completed for call {call_id}")
 

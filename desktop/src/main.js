@@ -65,12 +65,14 @@ async function findPort(candidates = [8001, 8011, 8021]) {
 function waitForHealth(port, { attempts = (isDev ? 20 : 60), delayMs = 500 } = {}) {
   const url = `http://127.0.0.1:${port}/health`
   let attempt = 0
+  const startedAt = Date.now()
   return new Promise((resolve, reject) => {
     const tick = () => {
       attempt += 1
       const req = http.get(url, res => {
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          logLine('health_ok', url, `attempt=${attempt}`)
+          const elapsed = Date.now() - startedAt
+          logLine('health_ok', url, `attempt=${attempt}`, `elapsed_ms=${elapsed}`)
           resolve(true)
         } else {
           res.resume()
@@ -115,10 +117,13 @@ async function startBackendDev() {
   backendProcess.stdout.on('data', d => logLine('backend_stdout', String(d).trim()))
   backendProcess.stderr.on('data', d => logLine('backend_stderr', String(d).trim()))
   backendProcess.on('exit', (code, signal) => logLine('backend_exit', `code=${code}`, `signal=${signal}`))
+  let waitStart = Date.now()
   try {
+    waitStart = Date.now()
     await waitForHealth(port)
+    logLine('backend_health_ready', { port, elapsed_ms: Date.now() - waitStart })
   } catch (e) {
-    logLine('backend_health_failed', e.message)
+    logLine('backend_health_failed', { error: e.message, elapsed_ms: Date.now() - waitStart })
     throw e
   }
 }
@@ -148,10 +153,13 @@ async function startBackendProd() {
   backendProcess.stdout.on('data', d => logLine('backend_stdout', String(d).trim()))
   backendProcess.stderr.on('data', d => logLine('backend_stderr', String(d).trim()))
   backendProcess.on('exit', (code, signal) => logLine('backend_exit', `code=${code}`, `signal=${signal}`))
+  let waitStart = Date.now()
   try {
+    waitStart = Date.now()
     await waitForHealth(port)
+    logLine('backend_health_ready', { port, elapsed_ms: Date.now() - waitStart })
   } catch (e) {
-    logLine('backend_health_failed', e.message)
+    logLine('backend_health_failed', { error: e.message, elapsed_ms: Date.now() - waitStart })
     throw e
   }
 }

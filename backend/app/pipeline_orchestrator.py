@@ -437,10 +437,21 @@ class AudioProcessingPipeline:
                 audio_path = self.pipeline_data[call_id]["processed_file_path"]
             else:
                 audio_path = self.pipeline_data[call_id]["file_path"]
-            
+
             # Update status
             self.db_integration.update_call_status(call_id, "transcribing")
-            
+
+            try:
+                load_result = self.whisper_processor.ensure_loaded()
+                if load_result:
+                    logger.info(f"Whisper model loaded for call {call_id}")
+            except TimeoutError as exc:
+                logger.error(f"Whisper model load timed out for call {call_id}: {exc}")
+                raise RuntimeError("Whisper model load timed out") from exc
+            except Exception as exc:
+                logger.error(f"Failed to prepare Whisper model for call {call_id}: {exc}")
+                raise
+
             live_enabled = is_live_transcription_enabled()
             batch_only = is_live_batch_only()
             logger.info(f"Live transcription enabled for call {call_id}: {live_enabled}; batch_only={batch_only}")
@@ -582,7 +593,18 @@ class AudioProcessingPipeline:
                 }
                 self.status_tracker.complete_step(call_id, "nlp_analysis", result)
                 return result
-            
+
+            try:
+                load_result = await nlp_processor.ensure_loaded()
+                if load_result:
+                    logger.info(f"NLP resources loaded for call {call_id}")
+            except TimeoutError as exc:
+                logger.error(f"NLP resource load timed out for call {call_id}: {exc}")
+                raise RuntimeError("NLP resources load timed out") from exc
+            except Exception as exc:
+                logger.error(f"Failed to prepare NLP resources for call {call_id}: {exc}")
+                raise
+
             # Perform comprehensive NLP analysis
             nlp_analysis = await nlp_processor.analyze_text(text, call_id)
             

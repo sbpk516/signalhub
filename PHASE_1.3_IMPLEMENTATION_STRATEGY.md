@@ -24,6 +24,69 @@ Every step must be:
 
 ## 📋 **Phase 1.3 Implementation Plan**
 
+### ✅ **Baseline Startup (Completed)**
+- Added startup instrumentation in `backend/app/main.py`, `backend/app/whisper_processor.py`, and `desktop/src/main.js`.
+- Rebuilt the packaged app so cold-start tests will emit the new `[STARTUP]` logs.
+
+### ✅ **Lazy-Load Whisper/Torch Strategy (Completed)**
+
+**Objective:** keep FastAPI startup instant while loading Whisper/Torch only when the first transcription actually requires them.
+
+**Status:** Implemented across PR1–PR5
+- PR1: Added thread/async-safe `ensure_loaded()` helpers for Whisper/NLP processors with telemetry and unit tests.
+- PR2: Wired helpers into pipeline orchestrator and FastAPI endpoints.
+- PR3: Scheduled background warm-up task on startup with graceful shutdown.
+- PR4: Surfaced model readiness via `/health`.
+- PR5: Frontend Upload page now polls readiness and displays warm-up messaging.
+
+**Outcome:** Models remain lazy-loaded, `/health` reports `not_loaded/loading/ready`, warm-up runs asynchronously, and users see clear “Preparing speech model…” messaging during cold starts.
+
+#### Planned changes
+- **Backend helpers** (`backend/app/whisper_processor.py`, `backend/app/nlp_processor.py`): introduce `ensure_whisper_loaded()` / `ensure_nlp_loaded()` with locking and timing logs.
+- **Pipeline call sites** (`backend/app/pipeline_orchestrator.py`, `backend/app/main.py` live endpoints): invoke helpers before transcription/NLP work.
+- **Optional warm-up** (`backend/app/main.py`): schedule a background task after startup to pre-load models without blocking `/health`.
+- **Logging & telemetry**: add lazy-load start/complete events and background warm-up status lines.
+- **UX signalling** (`frontend/src/pages/Upload.tsx`, live mic UI): surface “Preparing speech model…” when backend reports warm-up in progress.
+
+#### Model usage inventory (Step 3)
+- `backend/app/pipeline_orchestrator.py`
+  - `_step_transcription`: calls `transcribe_in_chunks` (when live SSE enabled) and `transcribe_audio`, then `save_transcript`.
+  - `_step_nlp_analysis`: calls `nlp_processor.analyze_text`.
+  - Constructor creates new `WhisperProcessor()` instance.
+- `backend/app/main.py`
+  - `/api/v1/live/chunk` (first chunk) uses `transcribe_audio` for partials.
+  - `/api/v1/live/stop` (batch mode) calls `transcribe_audio`, `save_transcript`, and runs `nlp_processor.analyze_text` when batch-only path executes.
+  - `/api/v1/pipeline/reanalyze/{call_id}` invokes `nlp_processor.analyze_text` directly.
+- `backend/app/nlp_processor.py` and `whisper_processor.py`
+  - Global singletons (`nlp_processor`, `whisper_processor`) used by various modules.
+  - No other direct uses found in repo search.
+
+#### Safety & verification
+- Use a mutex to prevent simultaneous model loads; include retries/timeouts.
+- Unit tests mock slow loads to confirm only first request waits; integration test ensures warm-up flag clears when complete.
+- Manual QA: cold-start packaged app, verify `/health` is ready quickly, first transcription shows warm-up message, later ones return immediately.
+
+> Status: planning approved; implementation can proceed once baseline measurements are recorded in the logs.
+
+#### Concurrency plan (Step 4)
+- **Helper structure**: add `WhisperProcessor.ensure_loaded()` and `NLPProcessor.ensure_loaded()` that:
+  - Check a shared flag (`self._model_loaded`) under a `threading.Lock`/`asyncio.Lock` to prevent double-loading.
+  - Wrap the existing `_load_model()` / `_load_resources()` in try/except, logging start/end and duration.
+  - Surface a `self._loading_in_progress` flag for diagnostics and UX signalling.
+- **Timeout handling**: expose a configurable timeout (env var) so we can fail fast if model load hangs; return a clear error to the caller if the lock wait exceeds that timeout.
+- **Warm-up task**: in `startup_event`, optionally kick off `asyncio.create_task(self.ensure_loaded())` so the model warms in the background without blocking `/health`.
+- **Health/status flag**: extend `/health` (or add `/status/model`) to report whether the model is `not_loaded`, `loading`, or `ready`, so the UI can react appropriately.
+
+#### Call-site updates (Step 5)
+- `backend/app/pipeline_orchestrator.py`
+  - `_step_transcription`: call `self.whisper_processor.ensure_loaded()` before transcribing (both SSE and batch paths).
+  - `_step_nlp_analysis`: call `nlp_processor.ensure_loaded()` (new helper) before analysis.
+- `backend/app/main.py`
+  - `/api/v1/live/chunk`: ensure first-chunk partial uses `ensure_loaded()` when transcription is enabled.
+  - `/api/v1/live/stop`: invoke the helper before batch transcribe/NLP; reuse `analysis_summary` if warm-up already triggered.
+  - `/api/v1/pipeline/reanalyze/{call_id}`: call `nlp_processor.ensure_loaded()` prior to `analyze_text`.
+- Any CLI/test scripts invoking transcription should either call the helper explicitly or rely on global initialization.
+
 ### **Step 1: Pipeline Orchestrator (Week 1)**
 **Goal**: Create the central pipeline controller
 
@@ -374,6 +437,21 @@ async def get_pipeline_debug(call_id: str):
         logger.error(f"Failed to get debug info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 ```
+
+### ✅ **Step 4: API Integration (Completed)**
+- Implemented `/api/v1/pipeline/upload`, `/api/v1/pipeline/status`, and `/api/v1/pipeline/debug` endpoints (Weeks 4 deliverable).
+- Validation performed via integration tests (`test_end_to_end_pipeline.py`) and manual smoke tests.
+
+### ✅ **Step 5: Individuals Steps Implementation (Completed)**
+- `_step_upload`, `_step_audio_processing`, `_step_transcription`, `_step_nlp_analysis`, `_step_database_storage` fully implemented with status tracking.
+
+### ✅ **Step 6: Lazy Loading & Warm-Up (Completed)**
+- Covered across PR1–PR5: helpers, integration, background warm-up, health status, frontend UX updates.
+
+### **Step 7: Documentation & Support (Week 5)**
+- Compile updated runbooks for desktop/web deployments covering lazy-load behaviour.
+- Add troubleshooting sections for warm-up delays and health indicators.
+- Prepare demo scripts or quick start guides.
 
 ## 🛠️ **Debugging Strategy**
 
