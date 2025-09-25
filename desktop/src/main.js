@@ -4,6 +4,7 @@ const { spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
 const net = require('net')
+const { checkForUpdates, CHECK_INTERVAL_MS, getLatestManifest } = require('./main/update-checker')
 
 // Ensure ffmpeg/ffprobe are visible when spawned from app (Homebrew paths)
 const HOMEBREW_BIN = '/opt/homebrew/bin'
@@ -36,6 +37,7 @@ function logLine(...args) {
 let backendInfo = { port: 8001, pid: null, mode: isDev ? 'dev' : 'prod' }
 let backendProcess = null
 let lastLoadTarget = ''
+let updateInterval = null
 
 async function isPortFree(port) {
   return new Promise(resolve => {
@@ -286,9 +288,17 @@ function createAppMenu() {
   Menu.setApplicationMenu(menu)
 }
 
-app.on('ready', () => {
+app.on('ready', async () => {
   createAppMenu()
-  createMainWindow()
+  await createMainWindow()
+  try {
+    await checkForUpdates()
+  } catch (e) {
+    logLine('update_check_error', e.message)
+  }
+  updateInterval = setInterval(() => {
+    checkForUpdates().catch(err => logLine('update_check_error', err.message))
+  }, CHECK_INTERVAL_MS)
 })
 
 app.on('activate', () => {
@@ -305,10 +315,38 @@ app.on('before-quit', () => {
       backendProcess.kill()
     }
   } catch (_) {}
+  if (updateInterval) {
+    clearInterval(updateInterval)
+    updateInterval = null
+  }
 })
 
 // IPC for renderer to get backend info
 ipcMain.handle('get-backend-info', async () => backendInfo)
 ipcMain.on('get-backend-info-sync', (event) => {
   event.returnValue = backendInfo
+})
+
+ipcMain.handle('open-update-download', async () => {
+  const manifest = getLatestManifest()
+  if (!manifest || !manifest.downloadUrl) {
+    const error = new Error('No update download URL available')
+    logLine('update_open_error', error.message)
+    throw error
+  }
+
+  try {
+    const parsed = new URL(manifest.downloadUrl)
+    const allowedHost = 'github.com'
+    if (parsed.protocol !== 'https:' || parsed.hostname !== allowedHost) {
+      throw new Error(`Blocked download URL: ${parsed.toString()}`)
+    }
+
+    await shell.openExternal(parsed.toString())
+    logLine('update_open_launch', parsed.toString())
+    return { ok: true }
+  } catch (error) {
+    logLine('update_open_error', error.message)
+    throw error
+  }
 })

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
 import { Dashboard, Capture, Transcripts, Analytics, Settings } from '../../pages'
@@ -8,10 +8,48 @@ const Layout: React.FC = () => {
   
   const [activePage, setActivePage] = useState<'dashboard' | 'capture' | 'transcripts' | 'analytics' | 'settings'>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<any | null>(null)
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
 
   const handleUploadComplete = useCallback(() => {
     console.log('[LAYOUT] Capture completed, switching to dashboard')
     setActivePage('dashboard')
+  }, [])
+
+  useEffect(() => {
+    const bridge = (window as any).signalhubUpdates
+    if (!bridge || typeof bridge.onAvailable !== 'function') {
+      console.warn('[LAYOUT] Update bridge is not available')
+      return
+    }
+
+    const unsubscribe = bridge.onAvailable((manifest: any) => {
+      console.log('[LAYOUT] Update manifest received', manifest)
+      setUpdateInfo(manifest)
+    })
+
+    const current = bridge.getLatestManifest?.()
+    if (current) {
+      console.log('[LAYOUT] Using cached update manifest', current)
+      setUpdateInfo(current)
+    }
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe()
+      }
+    }
+  }, [])
+
+  const handleDismissUpdate = useCallback((version: string) => {
+    console.log('[LAYOUT] Update dismissed for version', version)
+    setDismissedVersion(version)
+  }, [])
+
+  const handleDownloadUpdate = useCallback(() => {
+    console.log('[LAYOUT] Download update clicked')
+    const bridge = (window as any).signalhubUpdates
+    bridge?.openDownload?.()
   }, [])
 
   const renderPage = () => {
@@ -33,7 +71,15 @@ const Layout: React.FC = () => {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header activePage={activePage} onPageChange={setActivePage} onMenuToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <Header
+        activePage={activePage}
+        onPageChange={setActivePage}
+        onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
+        updateInfo={updateInfo}
+        dismissedVersion={dismissedVersion}
+        onDismissUpdate={handleDismissUpdate}
+        onDownloadUpdate={handleDownloadUpdate}
+      />
       <div className="flex">
         <Sidebar 
           isOpen={sidebarOpen} 

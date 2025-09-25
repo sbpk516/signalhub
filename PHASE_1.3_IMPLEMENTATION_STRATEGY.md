@@ -453,6 +453,22 @@ async def get_pipeline_debug(call_id: str):
 - Add troubleshooting sections for warm-up delays and health indicators.
 - Prepare demo scripts or quick start guides.
 
+### **Phase 1.3 – Future Enhancements (Backlog)**
+1. **Resilient Auto-Update Support**
+   - Goal: ship a dependable auto-update pipeline so desktop users always receive the latest features without friction.
+   - Scope ideas: code-signing strategy, delta packages, release notes surfaced in-app, safe rollback mechanisms.
+2. **Universal Audio-to-Text Conversion**
+   - Goal: allow users to transcribe audio from any location or device with minimal setup.
+   - Scope ideas: cloud ingest endpoint, authenticated API tokens, lightweight CLI/mobile uploader.
+3. **Extended Live Recording Durability**
+   - Goal: guarantee multi-hour live recording sessions (2–3+ hours) without crashes or data loss.
+   - Scope ideas: stress testing, chunk lifecycle hardening, disk space monitoring, automatic recovery after transient failures.
+4. **Rock-Solid Install & Operability**
+   - Goal: ensure new installs “just work” every time (dependencies bundled, health pre-flight, first-run walkthrough).
+   - Scope ideas: installer diagnostics, first-run checklist, proactive guidance if backend warm-up or database creation fails.
+
+**Suggested sequencing:** tackle auto-update first (reduces future release friction), then universal transcription (expands reach), followed by durability hardening and install polish once telemetry highlights priority gaps.
+
 ## 🛠️ **Debugging Strategy**
 
 ### **1. Step-by-Step Debugging**
