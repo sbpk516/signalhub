@@ -1,8 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 const UPDATE_EVENT = 'update-available'
+const DICTATION_SETTINGS_EVENT = 'dictation:settings-updated'
+
 const updateListeners = new Set()
+const dictationSettingsListeners = new Set()
+
 let latestManifest = null
+let latestDictationSettings = null
 
 ipcRenderer.on(UPDATE_EVENT, (_event, manifest) => {
   latestManifest = manifest
@@ -14,6 +19,17 @@ ipcRenderer.on(UPDATE_EVENT, (_event, manifest) => {
       listener(manifest)
     } catch (error) {
       console.error('[Preload] update listener failed', error)
+    }
+  })
+})
+
+ipcRenderer.on(DICTATION_SETTINGS_EVENT, (_event, settings) => {
+  latestDictationSettings = settings
+  dictationSettingsListeners.forEach((listener) => {
+    try {
+      listener(settings)
+    } catch (error) {
+      console.error('[Preload] dictation settings listener failed', error)
     }
   })
 })
@@ -62,5 +78,46 @@ contextBridge.exposeInMainWorld('signalhubUpdates', {
       console.error('[Preload] Failed to launch update download', error)
       throw error
     })
+  },
+})
+
+contextBridge.exposeInMainWorld('signalhubDictation', {
+  async getSettings() {
+    try {
+      const settings = await ipcRenderer.invoke('dictation:get-settings')
+      latestDictationSettings = settings
+      return settings
+    } catch (error) {
+      console.error('[Preload] Failed to get dictation settings', error)
+      throw error
+    }
+  },
+  async updateSettings(patch) {
+    try {
+      const settings = await ipcRenderer.invoke('dictation:set-settings', patch)
+      latestDictationSettings = settings
+      return settings
+    } catch (error) {
+      console.error('[Preload] Failed to update dictation settings', error)
+      throw error
+    }
+  },
+  onSettingsUpdated(callback) {
+    if (typeof callback !== 'function') {
+      console.warn('[Preload] onSettingsUpdated expects a function callback')
+      return () => {}
+    }
+    dictationSettingsListeners.add(callback)
+    if (latestDictationSettings) {
+      try {
+        callback(latestDictationSettings)
+      } catch (error) {
+        console.error('[Preload] immediate dictation callback failed', error)
+      }
+    }
+    return () => dictationSettingsListeners.delete(callback)
+  },
+  getCachedSettings() {
+    return latestDictationSettings
   },
 })

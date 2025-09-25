@@ -5,6 +5,7 @@ const fs = require('fs')
 const http = require('http')
 const net = require('net')
 const { checkForUpdates, CHECK_INTERVAL_MS, getLatestManifest } = require('./main/update-checker')
+const dictationSettings = require('./main/dictation-settings')
 
 // Ensure ffmpeg/ffprobe are visible when spawned from app (Homebrew paths)
 const HOMEBREW_BIN = '/opt/homebrew/bin'
@@ -38,6 +39,7 @@ let backendInfo = { port: 8001, pid: null, mode: isDev ? 'dev' : 'prod' }
 let backendProcess = null
 let lastLoadTarget = ''
 let updateInterval = null
+let dictationSettingsReady = false
 
 async function isPortFree(port) {
   return new Promise(resolve => {
@@ -289,6 +291,13 @@ function createAppMenu() {
 }
 
 app.on('ready', async () => {
+  try {
+    const settings = dictationSettings.loadSettings()
+    dictationSettingsReady = true
+    logLine('dictation_settings_loaded', settings)
+  } catch (error) {
+    logLine('dictation_settings_load_error', error.message)
+  }
   createAppMenu()
   await createMainWindow()
   try {
@@ -325,6 +334,37 @@ app.on('before-quit', () => {
 ipcMain.handle('get-backend-info', async () => backendInfo)
 ipcMain.on('get-backend-info-sync', (event) => {
   event.returnValue = backendInfo
+})
+
+ipcMain.handle('dictation:get-settings', async () => {
+  try {
+    const settings = dictationSettings.loadSettings({ forceRefresh: !dictationSettingsReady })
+    dictationSettingsReady = true
+    logLine('dictation_settings_get', settings)
+    return settings
+  } catch (error) {
+    logLine('dictation_settings_get_error', error.message)
+    throw error
+  }
+})
+
+ipcMain.handle('dictation:set-settings', async (_event, payload = {}) => {
+  try {
+    const updated = dictationSettings.saveSettings(payload)
+    dictationSettingsReady = true
+    logLine('dictation_settings_set', updated)
+    BrowserWindow.getAllWindows().forEach((win) => {
+      try {
+        win.webContents.send('dictation:settings-updated', updated)
+      } catch (notifyError) {
+        logLine('dictation_settings_notify_error', notifyError.message)
+      }
+    })
+    return updated
+  } catch (error) {
+    logLine('dictation_settings_set_error', error.message)
+    throw error
+  }
 })
 
 ipcMain.handle('open-update-download', async () => {
