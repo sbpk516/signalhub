@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Logo, Navigation } from './index'
 
 interface UpdateManifest {
@@ -15,7 +15,7 @@ interface HeaderProps {
   updateInfo?: UpdateManifest | null
   dismissedVersion?: string | null
   onDismissUpdate?: (version: string) => void
-  onDownloadUpdate?: () => void
+  onDownloadUpdate?: () => Promise<unknown>
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -27,6 +27,15 @@ const Header: React.FC<HeaderProps> = ({
   onDismissUpdate,
   onDownloadUpdate,
 }) => {
+  const isMountedRef = useRef(true)
+  const [isLaunchingDownload, setIsLaunchingDownload] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
   useEffect(() => {
     if (updateInfo) {
       console.log('[HEADER] Update available', updateInfo)
@@ -34,6 +43,40 @@ const Header: React.FC<HeaderProps> = ({
   }, [updateInfo])
 
   const showUpdateBanner = updateInfo && updateInfo.latestVersion !== dismissedVersion
+
+  const handleDownloadClick = () => {
+    if (isLaunchingDownload) {
+      return
+    }
+
+    setIsLaunchingDownload(true)
+
+    const notifyFailure = () => {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert('We could not open the download link. Please try again or download from GitHub releases.')
+      }
+    }
+
+    try {
+      const result = onDownloadUpdate?.()
+      Promise.resolve(result)
+        .catch((error: unknown) => {
+          console.error('[HEADER] Failed to launch update download', error)
+          notifyFailure()
+        })
+        .finally(() => {
+          if (isMountedRef.current) {
+            setIsLaunchingDownload(false)
+          }
+        })
+    } catch (error) {
+      console.error('[HEADER] Update download handler threw synchronously', error)
+      notifyFailure()
+      if (isMountedRef.current) {
+        setIsLaunchingDownload(false)
+      }
+    }
+  }
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
@@ -58,10 +101,13 @@ const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={onDownloadUpdate}
-                className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
+                onClick={handleDownloadClick}
+                className={`px-3 py-1 rounded-md text-white transition ${isLaunchingDownload ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                disabled={isLaunchingDownload}
+                aria-busy={isLaunchingDownload}
+                aria-live="polite"
               >
-                Download
+                {isLaunchingDownload ? 'Opening download...' : 'Download'}
               </button>
               <button
                 type="button"

@@ -56,10 +56,11 @@ contextBridge.exposeInMainWorld('signalhubUpdates', {
   openDownload() {
     if (!latestManifest || !latestManifest.downloadUrl) {
       console.warn('[Preload] openDownload called without a manifest')
-      return
+      return Promise.reject(new Error('No manifest available for download'))
     }
-    ipcRenderer.invoke('open-update-download').catch((error) => {
+    return ipcRenderer.invoke('open-update-download').catch((error) => {
       console.error('[Preload] Failed to launch update download', error)
+      throw error
     })
   },
 })

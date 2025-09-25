@@ -49,7 +49,17 @@ const Layout: React.FC = () => {
   const handleDownloadUpdate = useCallback(() => {
     console.log('[LAYOUT] Download update clicked')
     const bridge = (window as any).signalhubUpdates
-    bridge?.openDownload?.()
+
+    try {
+      const result = bridge?.openDownload?.()
+      return Promise.resolve(result).catch((error: unknown) => {
+        console.error('[LAYOUT] Failed to open update download', error)
+        throw error
+      })
+    } catch (error) {
+      console.error('[LAYOUT] Download handler threw synchronously', error)
+      return Promise.reject(error)
+    }
   }, [])
 
   const renderPage = () => {
