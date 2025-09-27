@@ -6,6 +6,13 @@ const http = require('http')
 const net = require('net')
 const { checkForUpdates, CHECK_INTERVAL_MS, getLatestManifest } = require('./main/update-checker')
 const dictationSettings = require('./main/dictation-settings')
+const DictationManager = require('./main/dictation-manager')
+let macPermissions = null
+try {
+  macPermissions = require('node-mac-permissions')
+} catch (error) {
+  macPermissions = null
+}
 
 // Ensure ffmpeg/ffprobe are visible when spawned from app (Homebrew paths)
 const HOMEBREW_BIN = '/opt/homebrew/bin'
@@ -40,6 +47,82 @@ let backendProcess = null
 let lastLoadTarget = ''
 let updateInterval = null
 let dictationSettingsReady = false
+let dictationManager = null
+
+async function syncDictationManager(settings) {
+  try {
+    const manager = getDictationManager()
+    if (settings && typeof settings.shortcut === 'string') {
+      await manager.updateShortcut({ shortcut: settings.shortcut })
+    }
+    if (settings && settings.enabled) {
+      const started = await manager.startListening(settings)
+      if (started) {
+        logLine('dictation_manager_started', settings)
+      } else {
+        logLine('dictation_manager_start_failed', { platform: process.platform })
+        broadcastDictationLifecycle('dictation:listener-fallback', {
+          reason: 'listener_failed',
+          platform: process.platform,
+        })
+      }
+    } else {
+      await manager.stopListening()
+      logLine('dictation_manager_stopped')
+    }
+  } catch (error) {
+    logLine('dictation_manager_sync_error', error.message)
+  }
+}
+
+async function checkMacAccessibility() {
+  if (process.platform !== 'darwin' || !macPermissions) {
+    return true
+  }
+  try {
+    const trusted = macPermissions.isTrustedAccessibilityClient?.(false)
+    logLine('dictation_accessibility_status', { trusted })
+    return !!trusted
+  } catch (error) {
+    logLine('dictation_accessibility_check_error', error.message)
+    return false
+  }
+}
+
+async function checkMacMicPermission() {
+  if (process.platform !== 'darwin' || !macPermissions) {
+    return true
+  }
+  try {
+    const status = macPermissions.getMicrophoneAuthorizationStatus?.()
+    logLine('dictation_microphone_status', { status })
+    return status === 'authorized' || status === 'not determined'
+  } catch (error) {
+    logLine('dictation_microphone_check_error', error.message)
+    return false
+  }
+}
+
+async function promptMacPermissions() {
+  if (process.platform !== 'darwin' || !macPermissions) {
+    return { accessibility: true, microphone: true }
+  }
+  let accessibility = false
+  let microphone = false
+  try {
+    accessibility = macPermissions.isTrustedAccessibilityClient?.(true) ?? false
+    logLine('dictation_accessibility_prompt', { accessibility })
+  } catch (error) {
+    logLine('dictation_accessibility_prompt_error', error.message)
+  }
+  try {
+    microphone = macPermissions.askForMicrophoneAccess?.() ?? false
+    logLine('dictation_microphone_prompt', { microphone })
+  } catch (error) {
+    logLine('dictation_microphone_prompt_error', error.message)
+  }
+  return { accessibility, microphone }
+}
 
 async function isPortFree(port) {
   return new Promise(resolve => {
@@ -291,13 +374,66 @@ function createAppMenu() {
 }
 
 app.on('ready', async () => {
+  let initialDictationSettings = null
   try {
-    const settings = dictationSettings.loadSettings()
+    initialDictationSettings = dictationSettings.loadSettings()
     dictationSettingsReady = true
-    logLine('dictation_settings_loaded', settings)
+    logLine('dictation_settings_loaded', initialDictationSettings)
   } catch (error) {
     logLine('dictation_settings_load_error', error.message)
   }
+  if (initialDictationSettings) {
+    await syncDictationManager(initialDictationSettings)
+  } else {
+    await syncDictationManager({ enabled: false })
+  }
+  const manager = getDictationManager()
+  manager.on('dictation:press-start', payload => {
+    logLine('dictation_event_start', payload)
+    broadcastDictationLifecycle('dictation:press-start', payload)
+  })
+  manager.on('dictation:press-end', payload => {
+    logLine('dictation_event_end', payload)
+    broadcastDictationLifecycle('dictation:press-end', payload)
+  })
+  manager.on('dictation:press-cancel', payload => {
+    logLine('dictation_event_cancel', payload)
+    broadcastDictationLifecycle('dictation:press-cancel', payload)
+  })
+  manager.on('dictation:request-start', async (payload) => {
+    logLine('dictation_permission_request', payload)
+    const accessibilityOk = await checkMacAccessibility()
+    const micOk = await checkMacMicPermission()
+    broadcastDictationLifecycle('dictation:permission-requested', {
+      ...payload,
+      accessibilityOk,
+      micOk,
+    })
+    if (!accessibilityOk || !micOk) {
+      broadcastDictationLifecycle('dictation:permission-required', {
+        ...payload,
+        accessibilityOk,
+        micOk,
+      })
+    }
+  })
+  manager.on('dictation:permission-granted', payload => {
+    logLine('dictation_permission_granted', payload)
+    broadcastDictationLifecycle('dictation:permission-granted', payload)
+  })
+  manager.on('dictation:permission-denied', payload => {
+    logLine('dictation_permission_denied', payload)
+    broadcastDictationLifecycle('dictation:permission-denied', payload)
+  })
+  manager.on('dictation:permission-cleared', payload => {
+    logLine('dictation_permission_cleared', payload)
+    broadcastDictationLifecycle('dictation:permission-cleared', payload)
+  })
+  manager.on('dictation:permission-denied', payload => {
+    if (payload.reason === 'listener_failed') {
+      broadcastDictationLifecycle('dictation:listener-fallback', payload)
+    }
+  })
   createAppMenu()
   await createMainWindow()
   try {
@@ -324,6 +460,13 @@ app.on('before-quit', () => {
       backendProcess.kill()
     }
   } catch (_) {}
+  try {
+    if (dictationManager) {
+      dictationManager.dispose().catch(err => logLine('dictation_manager_dispose_error', err.message))
+    }
+  } catch (error) {
+    logLine('dictation_manager_dispose_error', error.message)
+  }
   if (updateInterval) {
     clearInterval(updateInterval)
     updateInterval = null
@@ -353,6 +496,7 @@ ipcMain.handle('dictation:set-settings', async (_event, payload = {}) => {
     const updated = dictationSettings.saveSettings(payload)
     dictationSettingsReady = true
     logLine('dictation_settings_set', updated)
+    await syncDictationManager(updated)
     BrowserWindow.getAllWindows().forEach((win) => {
       try {
         win.webContents.send('dictation:settings-updated', updated)
@@ -364,6 +508,36 @@ ipcMain.handle('dictation:set-settings', async (_event, payload = {}) => {
   } catch (error) {
     logLine('dictation_settings_set_error', error.message)
     throw error
+  }
+})
+
+ipcMain.handle('dictation:permission-response', async (_event, payload = {}) => {
+  try {
+    const { requestId, granted, reason } = payload || {}
+    const manager = getDictationManager()
+    if (requestId === undefined || requestId === null) {
+      logLine('dictation_permission_response_missing_request', payload)
+      return { ok: false, message: 'missing_request_id' }
+    }
+    if (typeof granted !== 'boolean') {
+      logLine('dictation_permission_response_invalid_flag', payload)
+      return { ok: false, message: 'invalid_granted_flag' }
+    }
+    if (granted) {
+      const ok = manager.grantPermission({ requestId, source: 'renderer' })
+      if (!ok) {
+        logLine('dictation_permission_response_no_pending', { requestId, granted })
+      }
+      return ok ? { ok: true } : { ok: false, message: 'no_pending_request' }
+    }
+    const ok = manager.denyPermission({ requestId, reason: reason || 'renderer_denied' })
+    if (!ok) {
+      logLine('dictation_permission_response_no_pending', { requestId, granted })
+    }
+    return ok ? { ok: true } : { ok: false, message: 'no_pending_request' }
+  } catch (error) {
+    logLine('dictation_permission_response_error', error.message)
+    return { ok: false, message: error.message }
   }
 })
 
@@ -390,3 +564,25 @@ ipcMain.handle('open-update-download', async () => {
     throw error
   }
 })
+function getDictationManager() {
+  if (!dictationManager) {
+    dictationManager = new DictationManager({
+      logger: (level, message, meta) => {
+        try {
+          logLine(`dictation_manager_${level}`, message, meta || {})
+        } catch (_) {}
+      },
+    })
+  }
+  return dictationManager
+}
+function broadcastDictationLifecycle(eventName, payload) {
+  const windows = BrowserWindow.getAllWindows()
+  windows.forEach((win) => {
+    try {
+      win.webContents.send('dictation:lifecycle', { event: eventName, payload })
+    } catch (error) {
+      logLine('dictation_lifecycle_broadcast_error', error.message)
+    }
+  })
+}

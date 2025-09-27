@@ -36,20 +36,21 @@
   - [x] Parse accelerator strings into nut-js key sequences with platform-aware token normalization.
     - [x] Normalize modifier aliases (Command/Ctrl/Alt/etc.) and reject unsupported tokens with structured logging.
   - [ ] Introduce global key listener provider and ensure proper teardown on stop/dispose.
-    - [ ] Install `node-global-key-listener`, update desktop `package.json` scripts with `electron-rebuild`, and document native build requirements for CI.
+    - [x] Install `node-global-key-listener`, wire `electron-rebuild` postinstall, and document native build requirements for CI/dev environments.
     - [x] Map listener key codes to nut-js `Key` enums with a tested translation helper (letters, digits, modifiers, function keys).
     - [x] Bind keydown/keyup handlers using listener subscriptions; retain handles for cleanup and resilience after reloads.
     - [x] Detach listener subscriptions on `stopListening`, feature toggle changes, and `dispose` to prevent duplicate events or leaks.
   - [ ] Surface press-and-hold lifecycle details (logging, IPC wiring, permission checks) once listeners are active.
     - [x] Implement internal press/hold state machine and emit start/end/cancel lifecycle events.
-    - [ ] Add structured logging/tracing around lifecycle emissions, including debounce decisions and cancellation reasons.
-    - [ ] Forward lifecycle notifications to renderer via IPC; expose preload APIs and guard behind feature toggle state.
+    - [x] Add structured logging/tracing around lifecycle emissions, including debounce decisions and cancellation reasons.
+    - [x] Forward lifecycle notifications to renderer via IPC; expose preload APIs and guard behind feature toggle state.the remaining piece is the permission gating, which belongs to Task 3.
     - [ ] Validation checkpoint: manual test verifying press-hold-release produces ordered logs and renderer IPC events on macOS + Windows.
 - [ ] **Task 3** – Permission Flow & Notification IPC
-  - In dictation manager, on key press emit `dictation:request-start`. If mic permission is unknown, bring window to foreground, notify renderer (`dictation:permission-required`), and wait for confirmation before recording.
-  - Implement macOS Accessibility permission check (using `node-mac-permissions`) and surface a renderer prompt with retry/learn-more options; log denial.
-  - Document Windows/Linux permission expectations (admin rights, uinput) and add fallback messaging when hook initialization fails.
-  - Validation checkpoint: simulate denied permissions and confirm feature auto-disables with informative user feedback.
+  - [x] In dictation manager, on key press emit `dictation:request-start`; if permission is unknown, notify renderer (`dictation:permission-required`) and wait for confirmation before recording.
+  - [x] Implement macOS Accessibility/microphone checks (via `node-mac-permissions`), surface renderer prompts with retry/learn-more options, and log denial.
+  - [x] Document Windows/Linux prerequisites (admin rights, uinput) via fallback messaging when listener initialization fails.
+  - [ ] Validation checkpoint: simulate denied permissions (macOS accessibility/mic and Windows/Linux listener failure) to confirm the feature auto-disables, logs the fallback, and renderer messaging is displayed.
+  - [ ] Documentation note: Update README/desktop docs with macOS permission steps and Windows/Linux prerequisites once UI wiring is complete (tracked under Task 10).
 - [ ] **Task 4** – Backend Single-Call Endpoint
   - Create `POST /api/v1/dictation/transcribe` that accepts a short audio payload, runs Whisper `transcribe_snippet`, and returns `{ text, confidence, duration_ms }`. Validate payload size/duration, add structured logging, correlation IDs, and unit tests with mocked processor.
   - Ensure endpoint is feature-flag gated and returns clear error codes for unsupported audio or transcription failures.

@@ -1,5 +1,7 @@
 const EventEmitter = require('events')
 
+const PERMISSION_TIMEOUT_MS = 5000
+
 function createLogger(bridge) {
   const emit = (level, message, meta) => {
     try {
@@ -61,6 +63,8 @@ class DictationManager extends EventEmitter {
     this._targetKeySet = new Set()
     this._activeKeySet = new Set()
     this._pressStartedAt = null
+    this._permissionRequestSeq = 0
+    this._pendingPermission = null
   }
 
   async startListening(initialConfig = {}) {
@@ -136,6 +140,7 @@ class DictationManager extends EventEmitter {
       shortcut: this._config.shortcut || null,
       keys: Array.from(this._targetKeySet),
     })
+    return this._active
   }
 
   async stopListening() {
@@ -145,6 +150,7 @@ class DictationManager extends EventEmitter {
     }
 
     await this._detachListeners()
+    this._destroyGlobalListener()
     this._active = false
     this._resolvedShortcut = null
     this._state = 'idle'
@@ -152,6 +158,7 @@ class DictationManager extends EventEmitter {
     this._targetKeySet.clear()
     this._activeKeySet.clear()
     this._pressStartedAt = null
+    this._clearPendingPermission({ reason: 'manager_stopped' })
     this._log.info('dictation manager listening stopped (scaffold)')
   }
 
@@ -203,6 +210,7 @@ class DictationManager extends EventEmitter {
     this._targetKeySet.clear()
     this._activeKeySet.clear()
     this._pressStartedAt = null
+    this._clearPendingPermission({ reason: 'manager_disposed' })
     this.removeAllListeners()
     this._log.info('dictation manager disposed')
   }
@@ -287,6 +295,107 @@ class DictationManager extends EventEmitter {
     this._globalListener = null
     this._listenerCallback = null
     this._listenerStarted = false
+  }
+
+  _requestPermission(context = {}) {
+    if (this._pendingPermission) {
+      return
+    }
+    const requestId = ++this._permissionRequestSeq
+    const payload = {
+      requestId,
+      timestamp: Date.now(),
+      platform: process.platform,
+      context,
+    }
+    this._pendingPermission = {
+      id: requestId,
+      createdAt: payload.timestamp,
+      state: 'pending',
+      timeout: setTimeout(() => {
+        this._log.warn('dictation permission timeout', { requestId })
+        this.denyPermission({ requestId, reason: 'timeout' })
+      }, PERMISSION_TIMEOUT_MS)
+    }
+    this._log.info('dictation permission requested', payload)
+    try {
+      this.emit('dictation:request-start', payload)
+    } catch (error) {
+      this._log.error('failed to emit permission request', { error: error.message })
+    }
+  }
+
+  grantPermission({ requestId, source } = {}) {
+    const pending = this._pendingPermission
+    if (!pending || (requestId && pending.id !== requestId)) {
+      this._log.warn('grantPermission ignored', { requestId })
+      return false
+    }
+    pending.state = 'granted'
+    if (pending.timeout) {
+      clearTimeout(pending.timeout)
+    }
+    this._pendingPermission = null
+    const payload = {
+      requestId: pending.id,
+      timestamp: Date.now(),
+      source,
+    }
+    this._log.info('dictation permission granted', payload)
+    try {
+      this.emit('dictation:permission-granted', payload)
+    } catch (error) {
+      this._log.error('failed to emit permission granted', { error: error.message })
+    }
+    return true
+  }
+
+  denyPermission({ requestId, reason } = {}) {
+    const pending = this._pendingPermission
+    if (!pending || (requestId && pending.id !== requestId)) {
+      this._log.warn('denyPermission ignored', { requestId, reason })
+      return false
+    }
+    pending.state = 'denied'
+    if (pending.timeout) {
+      clearTimeout(pending.timeout)
+    }
+    this._pendingPermission = null
+    const payload = {
+      requestId: pending.id,
+      timestamp: Date.now(),
+      reason: reason || 'unknown',
+    }
+    this._log.warn('dictation permission denied', payload)
+    try {
+      this.emit('dictation:permission-denied', payload)
+    } catch (error) {
+      this._log.error('failed to emit permission denied', { error: error.message })
+    }
+    this._cancelPress('permission_denied', { requestId: payload.requestId, reason: payload.reason })
+    return true
+  }
+
+  _clearPendingPermission(meta = {}) {
+    const pending = this._pendingPermission
+    if (!pending) {
+      return
+    }
+    if (pending.timeout) {
+      clearTimeout(pending.timeout)
+    }
+    this._pendingPermission = null
+    const payload = {
+      requestId: pending.id,
+      timestamp: Date.now(),
+      ...meta,
+    }
+    this._log.debug('dictation permission cleared', payload)
+    try {
+      this.emit('dictation:permission-cleared', payload)
+    } catch (error) {
+      this._log.error('failed to emit permission cleared', { error: error.message })
+    }
   }
 
   _mapListenerEventToKey(event) {
@@ -500,6 +609,7 @@ class DictationManager extends EventEmitter {
         timestamp: now,
         durationMs: 0,
       })
+      this._requestPermission({ keyCode, rawEvent })
     } else if (this._state === 'armed') {
       // Re-enter pressed state if modifiers recover while still holding primary key
       if (this._isShortcutSatisfied()) {
@@ -559,6 +669,17 @@ class DictationManager extends EventEmitter {
   }
 
   _emitLifecycle(eventName, payload) {
+    try {
+      if (eventName === 'dictation:press-start') {
+        this._log.info('dictation lifecycle start', payload)
+      } else if (eventName === 'dictation:press-end') {
+        this._log.info('dictation lifecycle end', payload)
+      } else if (eventName === 'dictation:press-cancel') {
+        this._log.warn('dictation lifecycle cancel', payload)
+      } else {
+        this._log.debug('dictation lifecycle event', { eventName, payload })
+      }
+    } catch (_) {}
     try {
       this.emit(eventName, payload)
     } catch (error) {

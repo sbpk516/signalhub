@@ -5,9 +5,50 @@ const DICTATION_SETTINGS_EVENT = 'dictation:settings-updated'
 
 const updateListeners = new Set()
 const dictationSettingsListeners = new Set()
+const dictationLifecycleListeners = new Set()
+const dictationPermissionListeners = new Set()
 
 let latestManifest = null
 let latestDictationSettings = null
+let latestLifecycleEvent = null
+let latestPermissionRequest = null
+
+ipcRenderer.on('dictation:lifecycle', (_event, eventData) => {
+  latestLifecycleEvent = eventData
+  const lifecycleEvent = eventData && eventData.event
+  const lifecyclePayload = eventData && eventData.payload
+  if (lifecycleEvent === 'dictation:permission-required') {
+    latestPermissionRequest = lifecyclePayload || null
+    dictationPermissionListeners.forEach((listener) => {
+      try {
+        listener({ type: lifecycleEvent, payload: lifecyclePayload })
+      } catch (error) {
+        console.error('[Preload] dictation permission listener failed', error)
+      }
+    })
+  } else if (
+    lifecycleEvent === 'dictation:permission-granted' ||
+    lifecycleEvent === 'dictation:permission-denied' ||
+    lifecycleEvent === 'dictation:permission-cleared' ||
+    lifecycleEvent === 'dictation:listener-fallback'
+  ) {
+    latestPermissionRequest = null
+    dictationPermissionListeners.forEach((listener) => {
+      try {
+        listener({ type: lifecycleEvent, payload: lifecyclePayload })
+      } catch (error) {
+        console.error('[Preload] dictation permission listener failed', error)
+      }
+    })
+  }
+  dictationLifecycleListeners.forEach((listener) => {
+    try {
+      listener(eventData)
+    } catch (error) {
+      console.error('[Preload] dictation lifecycle listener failed', error)
+    }
+  })
+})
 
 ipcRenderer.on(UPDATE_EVENT, (_event, manifest) => {
   latestManifest = manifest
@@ -119,5 +160,52 @@ contextBridge.exposeInMainWorld('signalhubDictation', {
   },
   getCachedSettings() {
     return latestDictationSettings
+  },
+  onLifecycle(callback) {
+    if (typeof callback !== 'function') {
+      console.warn('[Preload] onLifecycle expects a function callback')
+      return () => {}
+    }
+    dictationLifecycleListeners.add(callback)
+    if (latestLifecycleEvent) {
+      try {
+        callback(latestLifecycleEvent)
+      } catch (error) {
+        console.error('[Preload] immediate lifecycle callback failed', error)
+      }
+    }
+    return () => dictationLifecycleListeners.delete(callback)
+  },
+  getLatestLifecycle() {
+    return latestLifecycleEvent
+  },
+  onPermissionRequired(callback) {
+    if (typeof callback !== 'function') {
+      console.warn('[Preload] onPermissionRequired expects a function callback')
+      return () => {}
+    }
+    dictationPermissionListeners.add(callback)
+    if (latestPermissionRequest) {
+      try {
+        callback({ type: 'dictation:permission-required', payload: latestPermissionRequest })
+      } catch (error) {
+        console.error('[Preload] immediate permission callback failed', error)
+      }
+    }
+    return () => dictationPermissionListeners.delete(callback)
+  },
+  getLatestPermissionRequest() {
+    return latestPermissionRequest
+  },
+  async respondPermission(response) {
+    try {
+      if (!response || typeof response !== 'object') {
+        throw new Error('Invalid permission response payload')
+      }
+      return await ipcRenderer.invoke('dictation:permission-response', response)
+    } catch (error) {
+      console.error('[Preload] Failed to send permission response', error)
+      throw error
+    }
   },
 })
