@@ -1,0 +1,804 @@
+const EventEmitter = require('events')
+
+function createLogger(bridge) {
+  const emit = (level, message, meta) => {
+    try {
+      if (bridge && typeof bridge === 'function') {
+        bridge(level, message, meta)
+        return
+      }
+      if (bridge && typeof bridge.log === 'function') {
+        bridge.log(level, message, meta)
+        return
+      }
+    } catch (error) {
+      console.error('[DictationManager] logger bridge failed', error)
+    }
+
+    const payload = meta ? `${message} ${JSON.stringify(meta)}` : message
+    if (level === 'error') {
+      console.error(`[DictationManager] ${payload}`)
+    } else if (level === 'warn') {
+      console.warn(`[DictationManager] ${payload}`)
+    } else {
+      console.log(`[DictationManager] ${payload}`)
+    }
+  }
+
+  return {
+    debug(message, meta) {
+      emit('debug', message, meta)
+    },
+    info(message, meta) {
+      emit('info', message, meta)
+    },
+    warn(message, meta) {
+      emit('warn', message, meta)
+    },
+    error(message, meta) {
+      emit('error', message, meta)
+    }
+  }
+}
+
+class DictationManager extends EventEmitter {
+  constructor({ logger } = {}) {
+    super()
+    this._log = createLogger(logger)
+    this._config = null
+    this._active = false
+    this._disposed = false
+    this._nut = null
+    this._keyboard = null
+    this._globalListener = null
+    this._listenerFactory = null
+    this._listenerCallback = null
+    this._listenerStarted = false
+    this._keyEnum = null
+    this._resolvedShortcut = null
+    this._state = 'idle'
+    this._lastEventTs = 0
+    this._targetKeySet = new Set()
+    this._activeKeySet = new Set()
+    this._pressStartedAt = null
+  }
+
+  async startListening(initialConfig = {}) {
+    if (this._disposed) {
+      this._log.warn('startListening requested after dispose, ignoring')
+      return
+    }
+    if (this._active) {
+      this._log.debug('startListening requested while already active')
+      return
+    }
+
+    if (!this._nut) {
+      try {
+        // Lazy load to avoid slowing down app startup if dictation stays disabled
+        // eslint-disable-next-line global-require
+        this._nut = require('@nut-tree-fork/nut-js')
+        this._keyboard = this._nut.keyboard
+        this._log.info('nut-js loaded for dictation manager')
+      } catch (error) {
+        this._log.error('failed to load @nut-tree-fork/nut-js', { error: error.message })
+        return
+      }
+    }
+
+    if (!this._listenerFactory) {
+      try {
+        // eslint-disable-next-line global-require
+        this._listenerFactory = require('node-global-key-listener').GlobalKeyboardListener
+        this._log.info('node-global-key-listener loaded for dictation manager')
+      } catch (error) {
+        this._log.error('failed to load node-global-key-listener', { error: error.message })
+        return
+      }
+    }
+
+    if (!this._keyboard) {
+      this._log.error('nut-js keyboard unavailable, aborting start')
+      return
+    }
+
+    this._config = { ...initialConfig }
+    if (this._config.shortcut) {
+      const resolved = this._parseShortcut(this._config.shortcut)
+      if (!resolved.ok) {
+        this._log.error('failed to parse dictation shortcut', {
+          shortcut: this._config.shortcut,
+          reason: resolved.reason,
+          tokens: resolved.tokens,
+        })
+        this._resolvedShortcut = null
+        return
+      }
+      this._resolvedShortcut = resolved
+    } else {
+      this._resolvedShortcut = null
+      this._log.warn('startListening invoked without shortcut configuration')
+      return
+    }
+    this._targetKeySet = new Set(this._resolvedShortcut.keys)
+    this._activeKeySet.clear()
+    this._pressStartedAt = null
+
+    const listenersAttached = await this._attachListeners()
+    if (!listenersAttached) {
+      this._targetKeySet.clear()
+      this._resolvedShortcut = null
+      return
+    }
+
+    this._active = true
+    this._log.info('dictation manager listening started (bootstrap)', {
+      shortcut: this._config.shortcut || null,
+      keys: Array.from(this._targetKeySet),
+    })
+  }
+
+  async stopListening() {
+    if (!this._active) {
+      this._log.debug('stopListening requested while manager inactive')
+      return
+    }
+
+    await this._detachListeners()
+    this._active = false
+    this._resolvedShortcut = null
+    this._state = 'idle'
+    this._lastEventTs = 0
+    this._targetKeySet.clear()
+    this._activeKeySet.clear()
+    this._pressStartedAt = null
+    this._log.info('dictation manager listening stopped (scaffold)')
+  }
+
+  async updateShortcut(patch = {}) {
+    if (this._disposed) {
+      this._log.warn('updateShortcut after dispose, ignoring')
+      return
+    }
+
+    this._config = { ...(this._config || {}), ...patch }
+
+    if (this._config.shortcut) {
+      const resolved = this._parseShortcut(this._config.shortcut)
+      if (!resolved.ok) {
+        this._log.warn('received invalid shortcut configuration', {
+          shortcut: this._config.shortcut,
+          reason: resolved.reason,
+          tokens: resolved.tokens,
+        })
+        return
+      }
+      this._resolvedShortcut = resolved
+      this._targetKeySet = new Set(resolved.keys)
+      this._log.debug('shortcut configuration updated (scaffold)', {
+        shortcut: this._config.shortcut,
+        keys: resolved.keys,
+      })
+    } else {
+      this._resolvedShortcut = null
+      this._targetKeySet.clear()
+      this._log.debug('shortcut configuration cleared (scaffold)')
+    }
+  }
+
+  async dispose() {
+    if (this._disposed) {
+      return
+    }
+
+    await this.stopListening()
+    this._disposed = true
+    this._destroyGlobalListener()
+    this._nut = null
+    this._keyboard = null
+    this._keyEnum = null
+    this._resolvedShortcut = null
+    this._state = 'idle'
+    this._lastEventTs = 0
+    this._targetKeySet.clear()
+    this._activeKeySet.clear()
+    this._pressStartedAt = null
+    this.removeAllListeners()
+    this._log.info('dictation manager disposed')
+  }
+
+  async _attachListeners() {
+    if (!this._listenerFactory) {
+      this._log.error('attachListeners called without listener factory')
+      return false
+    }
+    if (!this._resolvedShortcut || !Array.isArray(this._resolvedShortcut.keys) || !this._resolvedShortcut.keys.length) {
+      this._log.warn('attachListeners called without resolved shortcut keys')
+      return false
+    }
+
+    if (!this._globalListener) {
+      try {
+        this._globalListener = new this._listenerFactory()
+      } catch (error) {
+        this._log.error('failed to instantiate global key listener', { error: error.message })
+        this._destroyGlobalListener()
+        return false
+      }
+    }
+
+    if (this._listenerCallback && this._listenerStarted) {
+      this._log.debug('global key listener already attached')
+      return true
+    }
+
+    const handler = async (event) => {
+      if (!event || !event.state) {
+        return
+      }
+      const keyCode = this._mapListenerEventToKey(event)
+      if (keyCode === null || keyCode === undefined) {
+        return
+      }
+
+      if (event.state === 'DOWN') {
+        this._handleKeydown(keyCode, event)
+      } else if (event.state === 'UP') {
+        this._handleKeyup(keyCode, event)
+      }
+    }
+
+    try {
+      await this._globalListener.addListener(handler)
+      this._listenerCallback = handler
+      this._listenerStarted = true
+      this._log.debug('global key listener attached', {
+        shortcutKeys: Array.from(this._targetKeySet),
+      })
+      return true
+    } catch (error) {
+      this._log.error('failed to attach global key listener', { error: error.message })
+      this._listenerStarted = false
+      this._destroyGlobalListener()
+      return false
+    }
+  }
+
+  async _detachListeners() {
+    if (this._globalListener && this._listenerCallback) {
+      try {
+        this._globalListener.removeListener(this._listenerCallback)
+      } catch (error) {
+        this._log.warn('failed to remove global key listener', { error: error.message })
+      }
+      this._listenerCallback = null
+    }
+    this._log.debug('global key listener detached')
+  }
+
+  _destroyGlobalListener() {
+    if (this._listenerStarted && this._globalListener && typeof this._globalListener.kill === 'function') {
+      try {
+        this._globalListener.kill()
+      } catch (error) {
+        this._log.warn('failed to kill global key listener', { error: error.message })
+      }
+    }
+    this._globalListener = null
+    this._listenerCallback = null
+    this._listenerStarted = false
+  }
+
+  _mapListenerEventToKey(event) {
+    const Key = this._ensureKeyEnum()
+    if (!Key || !event) {
+      return null
+    }
+
+    const rawName = typeof event.name === 'string' && event.name.trim().length > 0
+      ? event.name
+      : (event.rawKey && typeof event.rawKey.name === 'string' ? event.rawKey.name : '')
+
+    const normalized = rawName.trim().toLowerCase()
+    if (!normalized) {
+      return null
+    }
+
+    const normalizedSpace = normalized.replace(/\s+/g, ' ')
+    const collapsed = normalizedSpace.replace(/\s+/g, '')
+
+    if (/^[a-z]$/.test(normalizedSpace)) {
+      const keyName = normalizedSpace.toUpperCase()
+      return Key[keyName] !== undefined ? Key[keyName] : null
+    }
+
+    if (/^\d$/.test(normalizedSpace)) {
+      const keyName = `Num${normalizedSpace}`
+      return Key[keyName] !== undefined ? Key[keyName] : null
+    }
+
+    if (/^f\d{1,2}$/i.test(normalizedSpace)) {
+      const keyName = normalizedSpace.toUpperCase()
+      return Key[keyName] !== undefined ? Key[keyName] : null
+    }
+
+    if (/^numpad \d$/.test(normalizedSpace)) {
+      const digit = normalizedSpace.split(' ')[1]
+      const keyName = `NumPad${digit}`
+      return Key[keyName] !== undefined ? Key[keyName] : null
+    }
+
+    const platform = process.platform
+
+    switch (normalizedSpace) {
+      case 'space':
+        return Key.Space
+      case 'backspace':
+        return Key.Backspace
+      case 'return':
+        return Key.Return
+      case 'enter':
+        return Key.Enter
+      case 'escape':
+        return Key.Escape
+      case 'tab':
+        return Key.Tab
+      case 'delete':
+        return Key.Delete
+      case 'backtick':
+      case 'section':
+        return Key.Grave
+      case 'equals':
+        return Key.Equal
+      case 'minus':
+        return Key.Minus
+      case 'square bracket open':
+        return Key.LeftBracket
+      case 'square bracket close':
+        return Key.RightBracket
+      case 'semicolon':
+        return Key.Semicolon
+      case 'quote':
+        return Key.Quote
+      case 'backslash':
+        return Key.Backslash
+      case 'comma':
+        return Key.Comma
+      case 'dot':
+      case 'period':
+        return Key.Period
+      case 'forward slash':
+      case 'slash':
+        return Key.Slash
+      case 'up arrow':
+        return Key.Up
+      case 'down arrow':
+        return Key.Down
+      case 'left arrow':
+        return Key.Left
+      case 'right arrow':
+        return Key.Right
+      case 'page up':
+        return Key.PageUp
+      case 'page down':
+        return Key.PageDown
+      case 'home':
+        return Key.Home
+      case 'end':
+        return Key.End
+      case 'caps lock':
+        return Key.CapsLock
+      case 'scroll lock':
+        return Key.ScrollLock
+      case 'num lock':
+        return Key.NumLock
+      case 'ins':
+      case 'insert':
+        return Key.Insert
+      case 'print screen':
+        return Key.Print
+      case 'fn':
+        return Key.Fn
+      case 'numpad divide':
+        return Key.Divide
+      case 'numpad multiply':
+        return Key.Multiply
+      case 'numpad minus':
+        return Key.Subtract
+      case 'numpad plus':
+        return Key.Add
+      case 'numpad return':
+        return Key.Enter
+      case 'numpad dot':
+        return Key.Decimal
+      case 'numpad clear':
+        return Key.Clear
+      case 'numpad equals':
+        return Key.NumPadEqual
+      case 'left shift':
+      case 'shift left':
+        return Key.LeftShift
+      case 'right shift':
+      case 'shift right':
+        return Key.RightShift
+      case 'left alt':
+      case 'left option':
+        return Key.LeftAlt
+      case 'right alt':
+      case 'right option':
+      case 'alt gr':
+        return Key.RightAlt
+      case 'left ctrl':
+      case 'left control':
+        return Key.LeftControl
+      case 'right ctrl':
+      case 'right control':
+        return Key.RightControl
+      case 'left cmd':
+      case 'left command':
+      case 'left meta':
+      case 'left win':
+      case 'left super':
+        return this._resolveMetaKey('left', platform, Key)
+      case 'right cmd':
+      case 'right command':
+      case 'right meta':
+      case 'right win':
+      case 'right super':
+        return this._resolveMetaKey('right', platform, Key)
+      case 'meta':
+      case 'command':
+      case 'cmd':
+      case 'super':
+        return this._resolveMetaKey('left', platform, Key)
+      default:
+        break
+    }
+
+    if (collapsed && Key[collapsed.toUpperCase()] !== undefined) {
+      return Key[collapsed.toUpperCase()]
+    }
+
+    return null
+  }
+
+  _resolveMetaKey(side, platform, Key) {
+    const left = side === 'left'
+    if (platform === 'darwin') {
+      const candidate = left ? Key.LeftCmd : Key.RightCmd
+      if (candidate !== undefined) return candidate
+    } else if (platform === 'win32') {
+      const candidate = left ? Key.LeftWin : Key.RightWin
+      if (candidate !== undefined) return candidate
+    } else {
+      const candidate = left ? Key.LeftSuper : Key.RightSuper
+      if (candidate !== undefined) return candidate
+    }
+    const fallback = left ? Key.LeftMeta : Key.RightMeta
+    return fallback !== undefined ? fallback : null
+  }
+
+  _handleKeydown(keyCode, rawEvent = {}) {
+    const now = Date.now()
+    if (this._shouldIgnoreEvent(now)) {
+      return
+    }
+
+    if (!this._targetKeySet.has(keyCode)) {
+      if (this._state === 'pressed') {
+        this._cancelPress('non_shortcut_key_down', { keyCode })
+      }
+      return
+    }
+
+    this._activeKeySet.add(keyCode)
+
+    if (this._state === 'idle' && this._isShortcutSatisfied()) {
+      this._pressStartedAt = now
+      this._transitionState('pressed', { keyCode, rawEvent })
+      this._emitLifecycle('dictation:press-start', {
+        timestamp: now,
+        durationMs: 0,
+      })
+    } else if (this._state === 'armed') {
+      // Re-enter pressed state if modifiers recover while still holding primary key
+      if (this._isShortcutSatisfied()) {
+        this._transitionState('pressed', { keyCode, rawEvent, reason: 'recovered' })
+      }
+    }
+  }
+
+  _handleKeyup(keyCode, rawEvent = {}) {
+    const now = Date.now()
+    if (this._shouldIgnoreEvent(now)) {
+      return
+    }
+
+    if (!this._targetKeySet.has(keyCode)) {
+      return
+    }
+
+    this._activeKeySet.delete(keyCode)
+
+    if (this._state === 'pressed') {
+      this._transitionState('armed', { keyCode, rawEvent })
+    }
+
+    if (this._activeKeySet.size === 0) {
+      if (this._state === 'armed') {
+        const duration = this._pressStartedAt ? now - this._pressStartedAt : 0
+        this._transitionState('idle', { keyCode, rawEvent })
+        this._emitLifecycle('dictation:press-end', {
+          timestamp: now,
+          durationMs: duration,
+        })
+      } else if (this._state === 'pressed') {
+        // Shortcut released without transitioning to armed (single key combos)
+        const duration = this._pressStartedAt ? now - this._pressStartedAt : 0
+        this._transitionState('idle', { keyCode, rawEvent, reason: 'direct_release' })
+        this._emitLifecycle('dictation:press-end', {
+          timestamp: now,
+          durationMs: duration,
+        })
+      } else if (this._state !== 'idle') {
+        this._cancelPress('unexpected_release', { keyCode })
+      }
+      this._pressStartedAt = null
+      this._activeKeySet.clear()
+    }
+  }
+
+  _cancelPress(reason, meta = {}) {
+    if (this._state === 'idle') {
+      return
+    }
+    this._transitionState('idle', { reason, ...meta })
+    this._activeKeySet.clear()
+    this._pressStartedAt = null
+    this._emitLifecycle('dictation:press-cancel', { reason, timestamp: Date.now(), ...meta })
+  }
+
+  _emitLifecycle(eventName, payload) {
+    try {
+      this.emit(eventName, payload)
+    } catch (error) {
+      this._log.error('failed to emit lifecycle event', { eventName, error: error.message })
+    }
+  }
+
+  _isShortcutSatisfied() {
+    if (!this._targetKeySet.size) {
+      return false
+    }
+    for (const key of this._targetKeySet) {
+      if (!this._activeKeySet.has(key)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  _transitionState(next, meta = {}) {
+    if (this._state === next) {
+      return
+    }
+    const previous = this._state
+    this._state = next
+    this._lastEventTs = Date.now()
+    this._log.debug('state transition', { previous, next, ...meta })
+  }
+
+  _shouldIgnoreEvent(now = Date.now()) {
+    const diff = now - this._lastEventTs
+    if (diff >= 0 && diff < 10) {
+      this._log.debug('debounce: ignoring event', { diff })
+      return true
+    }
+    return false
+  }
+
+  _parseShortcut(accelerator) {
+    if (typeof accelerator !== 'string') {
+      return { ok: false, reason: 'non_string' }
+    }
+
+    const trimmed = accelerator.trim()
+    if (!trimmed) {
+      return { ok: false, reason: 'empty' }
+    }
+
+    const keyEnum = this._ensureKeyEnum()
+    if (!keyEnum) {
+      return { ok: false, reason: 'key_enum_unavailable' }
+    }
+
+    const rawTokens = trimmed.split('+').map(token => token.trim()).filter(Boolean)
+    if (!rawTokens.length) {
+      return { ok: false, reason: 'empty' }
+    }
+
+    const tokens = []
+    const resolvedKeys = []
+    const unsupported = []
+
+    for (const token of rawTokens) {
+      const resolution = this._resolveToken(token, keyEnum)
+      if (!resolution) {
+        unsupported.push(token)
+        continue
+      }
+      tokens.push(token)
+      resolvedKeys.push(...resolution)
+    }
+
+    if (unsupported.length) {
+      return { ok: false, reason: 'unsupported_tokens', tokens: unsupported }
+    }
+
+    return { ok: true, tokens, keys: resolvedKeys }
+  }
+
+  _ensureKeyEnum() {
+    if (this._keyEnum) {
+      return this._keyEnum
+    }
+
+    if (this._nut && this._nut.Key) {
+      this._keyEnum = this._nut.Key
+      return this._keyEnum
+    }
+
+    try {
+      // eslint-disable-next-line global-require
+      const shared = require('@nut-tree-fork/shared')
+      if (shared && shared.Key) {
+        this._keyEnum = shared.Key
+        return this._keyEnum
+      }
+    } catch (error) {
+      this._log.error('failed to load nut-js key enum', { error: error.message })
+    }
+
+    return null
+  }
+
+  _resolveToken(token, Key) {
+    const normalized = token.trim().toLowerCase()
+    if (!normalized) {
+      return null
+    }
+
+    const platform = process.platform
+
+    const directKeyName = this._lookupDirectKeyName(normalized, platform)
+    if (directKeyName && Key[directKeyName] !== undefined) {
+      return [Key[directKeyName]]
+    }
+
+    if (/^f\d{1,2}$/i.test(normalized)) {
+      const fnName = normalized.toUpperCase()
+      if (Key[fnName] !== undefined) {
+        return [Key[fnName]]
+      }
+    }
+
+    if (/^[a-z]$/.test(normalized)) {
+      const letterName = normalized.toUpperCase()
+      if (Key[letterName] !== undefined) {
+        return [Key[letterName]]
+      }
+    }
+
+    if (/^\d$/.test(normalized)) {
+      const digitName = `Num${normalized}`
+      if (Key[digitName] !== undefined) {
+        return [Key[digitName]]
+      }
+    }
+
+    return null
+  }
+
+  _lookupDirectKeyName(normalized, platform) {
+    switch (normalized) {
+      case 'commandorcontrol':
+        return platform === 'darwin' ? 'LeftCmd' : 'LeftControl'
+      case 'control':
+      case 'ctrl':
+        return 'LeftControl'
+      case 'command':
+      case 'cmd':
+        return 'LeftCmd'
+      case 'super':
+        return 'LeftSuper'
+      case 'meta':
+        return 'LeftMeta'
+      case 'win':
+      case 'windows':
+        return 'LeftWin'
+      case 'alt':
+      case 'option':
+        return 'LeftAlt'
+      case 'altgr':
+        return 'RightAlt'
+      case 'optionoralt':
+        return 'LeftAlt'
+      case 'shift':
+        return 'LeftShift'
+      case 'rightshift':
+        return 'RightShift'
+      case 'leftshift':
+        return 'LeftShift'
+      case 'space':
+        return 'Space'
+      case 'tab':
+        return 'Tab'
+      case 'enter':
+        return 'Enter'
+      case 'return':
+        return 'Return'
+      case 'backspace':
+        return 'Backspace'
+      case 'delete':
+        return 'Delete'
+      case 'escape':
+      case 'esc':
+        return 'Escape'
+      case 'pageup':
+        return 'PageUp'
+      case 'pagedown':
+        return 'PageDown'
+      case 'home':
+        return 'Home'
+      case 'end':
+        return 'End'
+      case 'left':
+        return 'Left'
+      case 'right':
+        return 'Right'
+      case 'up':
+        return 'Up'
+      case 'down':
+        return 'Down'
+      case 'capslock':
+        return 'CapsLock'
+      case 'minus':
+      case 'dash':
+      case 'hyphen':
+        return 'Minus'
+      case 'equals':
+      case 'equal':
+        return 'Equal'
+      case 'plus':
+        return 'Add'
+      case 'multiply':
+        return 'Multiply'
+      case 'divide':
+        return 'Divide'
+      case 'subtract':
+        return 'Subtract'
+      case 'comma':
+        return 'Comma'
+      case 'period':
+      case 'dot':
+        return 'Period'
+      case 'slash':
+        return 'Slash'
+      case 'backslash':
+        return 'Backslash'
+      case 'semicolon':
+        return 'Semicolon'
+      case 'quote':
+        return 'Quote'
+      case 'grave':
+      case 'tilde':
+        return 'Grave'
+      case 'menu':
+        return 'Menu'
+      default:
+        return null
+    }
+  }
+}
+
+module.exports = DictationManager

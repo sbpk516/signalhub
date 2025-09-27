@@ -3,7 +3,7 @@
 ## Impact Analysis
 
 - **New files**
-  - `desktop/src/main/dictation-manager.js` – owns `iohook` registration, press/hold lifecycle, permission gating, IPC messaging, feature toggle state.
+  - `desktop/src/main/dictation-manager.js` – owns `@nut-tree/nut-js` registration, press/hold lifecycle, permission gating, IPC messaging, feature toggle state.
   - `frontend/src/modules/dictation/dictationController.ts` – renderer hook that records audio, calls new backend endpoint, performs caret insertion, manages overlay state.
   - `frontend/src/modules/dictation/dictationOverlay.tsx` – React portal component for “Listening…” / “Processing…” UI.
   - `frontend/src/modules/dictation/permissionPrompt.tsx` – lightweight dialog to explain mic permission when needed.
@@ -11,7 +11,7 @@
   - `desktop/src/config/dictation-store.json` (created at runtime) – persists enable/disable + shortcut preference.
 
 - **Existing files to modify**
-  - `desktop/package.json` – add `iohook` dependency and build scripts.
+  - `desktop/package.json` – add `@nut-tree/nut-js` dependency and build scripts.
   - `desktop/src/main.js` – initialize and shut down dictation manager; surface feature flag via IPC.
   - `desktop/src/preload.js` – expose dictation events (`onDictationStart`, `onDictationStop`, `onDictationResult`, etc.), commands (`requestDictationToggle`, `fetchDictationState`), and permission helper.
   - `frontend/src/main.tsx` (or `App.tsx`) – bootstrap dictation controller/overlay.
@@ -21,31 +21,61 @@
   - Docs: `README.md`, `PHASE_1.3_IMPLEMENTATION_STRATEGY.md`, changelog.
 
 - **Dependencies / Configuration**
-  - Add `iohook` (desktop) for system-wide keyboard hook; document build considerations.
+  - Use `@nut-tree-fork/nut-js` for programmatic typing/caret control; pair with `node-global-key-listener` for global key press/release hooks. Both require native modules rebuilt via `electron-rebuild` for dev and packaging pipelines.
   - Introduce `DICTATION_SHORTCUT` default (for example, `CommandOrControl+Shift+D`) stored in config JSON; toggle state persisted per user (default off).
+  - Document and prompt for macOS Accessibility permissions required by the global key listener/nut-js pairing; capture Windows/Linux prerequisites (admin rights, uinput availability).
   - Backend: no new external dependencies; reuse Whisper + FFmpeg.
-
+  
 ## Step-by-Step Task Breakdown
 
 - [x] **Task 1** – Feature Flag & Config Foundation
   - Introduce dictation enable flag and shortcut default. Implement JSON store under `app.getPath('userData')/dictation-settings.json` with load/save helpers. Expose IPC handlers (`getDictationSettings`, `setDictationSettings`). Toggle defaults to disabled.
-- [ ] **Task 2** – System Hook Integration Scaffold
-  - Add `iohook` dependency and wrap it in `dictation-manager.js` to capture configured shortcut regardless of app focus. Register on app ready only if the feature is enabled; ensure safe teardown on quit, handle macOS accessibility permission warnings in logs.
+- [ ] **Task 2** – System Shortcut Integration Scaffold
+  - [x] Lazy-load `@nut-tree-fork/nut-js`, cache keyboard handles, and guard startup when the dependency fails.
+    - [x] Verify main-process bootstrap succeeds and records failure reasons when the dependency is missing.
+  - [x] Parse accelerator strings into nut-js key sequences with platform-aware token normalization.
+    - [x] Normalize modifier aliases (Command/Ctrl/Alt/etc.) and reject unsupported tokens with structured logging.
+  - [ ] Introduce global key listener provider and ensure proper teardown on stop/dispose.
+    - [ ] Install `node-global-key-listener`, update desktop `package.json` scripts with `electron-rebuild`, and document native build requirements for CI.
+    - [x] Map listener key codes to nut-js `Key` enums with a tested translation helper (letters, digits, modifiers, function keys).
+    - [x] Bind keydown/keyup handlers using listener subscriptions; retain handles for cleanup and resilience after reloads.
+    - [x] Detach listener subscriptions on `stopListening`, feature toggle changes, and `dispose` to prevent duplicate events or leaks.
+  - [ ] Surface press-and-hold lifecycle details (logging, IPC wiring, permission checks) once listeners are active.
+    - [x] Implement internal press/hold state machine and emit start/end/cancel lifecycle events.
+    - [ ] Add structured logging/tracing around lifecycle emissions, including debounce decisions and cancellation reasons.
+    - [ ] Forward lifecycle notifications to renderer via IPC; expose preload APIs and guard behind feature toggle state.
+    - [ ] Validation checkpoint: manual test verifying press-hold-release produces ordered logs and renderer IPC events on macOS + Windows.
 - [ ] **Task 3** – Permission Flow & Notification IPC
   - In dictation manager, on key press emit `dictation:request-start`. If mic permission is unknown, bring window to foreground, notify renderer (`dictation:permission-required`), and wait for confirmation before recording.
+  - Implement macOS Accessibility permission check (using `node-mac-permissions`) and surface a renderer prompt with retry/learn-more options; log denial.
+  - Document Windows/Linux permission expectations (admin rights, uinput) and add fallback messaging when hook initialization fails.
+  - Validation checkpoint: simulate denied permissions and confirm feature auto-disables with informative user feedback.
 - [ ] **Task 4** – Backend Single-Call Endpoint
-  - Create `POST /api/v1/dictation/transcribe` that accepts a short audio payload, runs Whisper `transcribe_snippet`, and returns `{ text, confidence, duration_ms }`. Validate payload size/duration, add structured logging, and unit tests with mocked processor.
+  - Create `POST /api/v1/dictation/transcribe` that accepts a short audio payload, runs Whisper `transcribe_snippet`, and returns `{ text, confidence, duration_ms }`. Validate payload size/duration, add structured logging, correlation IDs, and unit tests with mocked processor.
+  - Ensure endpoint is feature-flag gated and returns clear error codes for unsupported audio or transcription failures.
 - [ ] **Task 5** – Renderer Dictation Controller (Recording Pipeline)
   - Build controller that on `dictation:request-start` requests mic access, starts `MediaRecorder`, buffers audio, and on release posts to the new endpoint. Handle timeouts and surface success/error via IPC.
+  - Add retry/backoff strategy for transient backend failures and a watchdog for recordings exceeding max duration.
+  - Validation checkpoint: automated test mocking `MediaRecorder` to ensure state transitions and payload formation.
 - [ ] **Task 6** – Overlay & Feedback UI
-  - Implement portal overlay showing “Listening…” while recording and “Processing…” until transcription completes. Include accessible aria-live messaging and ensure visibility when the window is foregrounded for permissions.
+  - Implement portal overlay showing “Listening…” while recording and “Processing…” until transcription completes. Include accessible aria-live messaging, keyboard focus management, and ensure visibility when the window is foregrounded for permissions.
+  - Provide explicit cues for permission-required state and recovery instructions.
 - [ ] **Task 7** – Intelligent Text Insertion Utility
-  - Add helper to locate the active element, insert returned text at the caret with whitespace normalization, and fall back to clipboard paste if focus is lost. Include unit tests where feasible.
+  - Add helper to locate the active element, insert returned text at the caret with whitespace normalization, and fall back to clipboard paste if focus is lost. Leverage `@nut-tree-fork/nut-js` to programmatically type the transcribed text into external applications. Include unit tests where feasible.
+  - Separate internal renderer insertion (React components) from external app typing via nut-js; handle localization (e.g., newline handling) and clipboard rollback on failure.
 - [ ] **Task 8** – Settings Toggle UI & IPC Wiring
   - Add toggle in Settings (“Press-and-Hold Dictation”) with status indicator and shortcut display. Wire to preload IPC to enable/disable the manager at runtime, and include conflict warnings.
+  - Provide onboarding tips (first-run tooltip, link to permissions guide) and shortcut validation against Electron/globalShortcut conflicts.
+  - Persist config versioning for future migrations and expose “restore defaults” action.
 - [ ] **Task 9** – Error Handling & Edge Conditions
   - Implement user-facing toast/banner for errors (permission denied, backend failure, timeout). Add recovery logic and detailed logging; disable feature after repeated fatal errors.
+  - Detect stuck-key scenarios (missing keyup) and auto-reset listener state with user notification.
+  - Provide safe-mode toggle to re-enable feature after corrective action; log correlation IDs to desktop log for support.
 - [ ] **Task 10** – Documentation & QA Checklist
-  - Update docs with setup instructions (accessibility permission for iohook, mic permissions, shortcut management). Produce manual testing guide covering all scenarios.
+  - Update docs with setup instructions (including granting macOS Accessibility permissions required by global listener/nut-js, mic permissions, shortcut management). Produce manual testing guide covering all scenarios.
+  - Add troubleshooting section (permission denial, antivirus conflicts, stuck keys), onboarding copy, and known limitations per platform.
+  - Document packaging/build changes (electron-rebuild step, CI requirements, notarization considerations).
 - [ ] **Task 11** – Validation & Regression Pass
   - Run desktop and backend test suites, lint/type-check, and perform manual smoke tests on supported OSes verifying system-wide shortcut, permission flow, and text insertion.
+  - Ensure CI rebuilds native modules for macOS, Windows, Linux; add automated regression scripts for lifecycle events and transcription flow.
+  - Final acceptance checklist: shortcut detection, permission onboarding, transcription round-trip, text insertion, error recovery, documentation links confirmed.
