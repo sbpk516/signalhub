@@ -541,6 +541,23 @@ ipcMain.handle('dictation:permission-response', async (_event, payload = {}) => 
   }
 })
 
+ipcMain.handle('dictation:cancel-active-press', async (_event, payload = {}) => {
+  try {
+    const manager = getDictationManager()
+    const { reason = 'renderer_cancelled', details = {} } = payload || {}
+    const ok = manager.cancelActivePress({ reason, details })
+    if (!ok) {
+      logLine('dictation_cancel_noop', { reason, details })
+      return { ok: false, message: 'no_active_press' }
+    }
+    logLine('dictation_cancel_request', { reason, details })
+    return { ok: true }
+  } catch (error) {
+    logLine('dictation_cancel_error', error.message)
+    return { ok: false, message: error.message }
+  }
+})
+
 ipcMain.handle('open-update-download', async () => {
   const manifest = getLatestManifest()
   if (!manifest || !manifest.downloadUrl) {

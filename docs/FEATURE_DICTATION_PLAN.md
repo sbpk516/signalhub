@@ -52,10 +52,13 @@
   - [ ] Validation checkpoint: simulate denied permissions (macOS accessibility/mic and Windows/Linux listener failure) to confirm the feature auto-disables, logs the fallback, and renderer messaging is displayed.
   - [ ] Documentation note: Update README/desktop docs with macOS permission steps and Windows/Linux prerequisites once UI wiring is complete (tracked under Task 10).
 - [ ] **Task 4** – Backend Single-Call Endpoint
-  - Create `POST /api/v1/dictation/transcribe` that accepts a short audio payload, runs Whisper `transcribe_snippet`, and returns `{ text, confidence, duration_ms }`. Validate payload size/duration, add structured logging, correlation IDs, and unit tests with mocked processor.
-  - Ensure endpoint is feature-flag gated and returns clear error codes for unsupported audio or transcription failures.
+  - [x] Create `POST /api/v1/dictation/transcribe` that accepts a short audio payload, runs Whisper `transcribe_snippet`, and returns `{ text, confidence, duration_ms }`. Validate payload size/duration, add structured logging, correlation IDs, and unit tests with mocked processor.
+  - [x] Ensure endpoint is feature-flag gated and returns clear error codes for unsupported audio or transcription failures. (_Tests added; execution blocked in sandbox due to Whisper warmup_)
 - [ ] **Task 5** – Renderer Dictation Controller (Recording Pipeline)
-  - Build controller that on `dictation:request-start` requests mic access, starts `MediaRecorder`, buffers audio, and on release posts to the new endpoint. Handle timeouts and surface success/error via IPC.
+  - [x] Scaffold controller hook/provider to listen to permission + lifecycle events.
+  - [x] Build controller that on `dictation:request-start` requests mic access, starts `MediaRecorder`, buffers audio, and on release posts to the new endpoint. Handle timeouts and surface success/error via IPC.
+    - [x] Enforce backend payload limit (5 MB) when packaging snippets; surface a “too large” error before upload.
+    - [x] Launch uploads via retry/backoff helper with user-cancel/timeout classification and abort cleanup.
   - Add retry/backoff strategy for transient backend failures and a watchdog for recordings exceeding max duration.
   - Validation checkpoint: automated test mocking `MediaRecorder` to ensure state transitions and payload formation.
 - [ ] **Task 6** – Overlay & Feedback UI

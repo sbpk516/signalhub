@@ -208,4 +208,15 @@ contextBridge.exposeInMainWorld('signalhubDictation', {
       throw error
     }
   },
+  async cancelActivePress(payload = {}) {
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new Error('Invalid cancel payload')
+      }
+      return await ipcRenderer.invoke('dictation:cancel-active-press', payload)
+    } catch (error) {
+      console.error('[Preload] Failed to request dictation cancel', error)
+      throw error
+    }
+  },
 })

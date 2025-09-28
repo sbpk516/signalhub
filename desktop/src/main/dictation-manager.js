@@ -162,6 +162,25 @@ class DictationManager extends EventEmitter {
     this._log.info('dictation manager listening stopped (scaffold)')
   }
 
+  cancelActivePress({ reason = 'renderer_cancelled', details = {} } = {}) {
+    if (this._disposed) {
+      this._log.warn('cancelActivePress invoked after dispose', { reason })
+      return false
+    }
+    if (!this._active) {
+      this._log.debug('cancelActivePress invoked while inactive', { reason })
+      return false
+    }
+    if (this._state === 'idle') {
+      this._log.debug('cancelActivePress invoked with idle state', { reason })
+      return false
+    }
+
+    this._log.info('cancelActivePress invoked', { reason, details })
+    this._cancelPress(reason, { source: 'renderer', ...details })
+    return true
+  }
+
   async updateShortcut(patch = {}) {
     if (this._disposed) {
       this._log.warn('updateShortcut after dispose, ignoring')
