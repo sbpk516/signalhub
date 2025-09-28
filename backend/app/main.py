@@ -28,6 +28,7 @@ from .live_events import event_bus, sse_format
 from .live_mic import live_sessions
 from .audio_processor import audio_processor
 from .whisper_processor import whisper_processor
+from .api import dictation_router
 
 _MODULE_IMPORT_STARTED = time.perf_counter()
 _warmup_task: Optional[asyncio.Task] = None
@@ -69,6 +70,8 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.debug
 )
+
+app.include_router(dictation_router, prefix="/api/v1")
 
 # Add CORS middleware (for future frontend)
 app.add_middleware(

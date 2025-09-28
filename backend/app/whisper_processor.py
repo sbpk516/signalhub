@@ -2,11 +2,13 @@
 Whisper integration module for SignalHub Phase 1.2.2.
 Provides comprehensive speech-to-text functionality using OpenAI Whisper.
 """
+import base64
 import os
 import json
 import os
 import time
 import threading
+import tempfile
 _MODULE_IMPORT_STARTED = time.perf_counter()
 _MODULE_IMPORT_ENDED = None
 
@@ -356,6 +358,116 @@ class WhisperProcessor:
                     "model_used": self.model_name,
                     "device_used": self.device
                 }
+
+    def transcribe_snippet_from_base64(
+        self,
+        audio_base64: str,
+        *,
+        media_type: str = "audio/wav",
+        sample_rate: Optional[int] = None,
+        max_bytes: int = 5 * 1024 * 1024,
+        max_duration_ms: int = 120 * 1000,
+    ) -> Dict[str, Any]:
+        """Decode a base64 snippet, normalize it, and run Whisper transcription."""
+
+        if not audio_base64 or not isinstance(audio_base64, str):
+            raise ValueError("audio_base64 payload is required")
+
+        if not _transcription_enabled():
+            raise RuntimeError("Transcription disabled via environment flag")
+
+        try:
+            audio_bytes = base64.b64decode(audio_base64, validate=True)
+        except Exception as exc:
+            logger.warning("Invalid base64 audio payload: %s", exc)
+            raise ValueError("audio_base64 payload is not valid base64") from exc
+
+        if len(audio_bytes) == 0:
+            raise ValueError("audio_base64 payload is empty")
+
+        if len(audio_bytes) > max_bytes:
+            raise ValueError("audio payload exceeds maximum allowed size")
+
+        suffix_map = {
+            "audio/wav": ".wav",
+            "audio/x-wav": ".wav",
+            "audio/mpeg": ".mp3",
+            "audio/mp3": ".mp3",
+            "audio/ogg": ".ogg",
+            "audio/webm": ".webm",
+        }
+        normalized_media_type = media_type.lower()
+        if normalized_media_type not in suffix_map:
+            raise ValueError("unsupported media_type")
+        suffix = suffix_map[normalized_media_type]
+
+        logger.info(
+            "[DICTATION] snippet received size_bytes=%s media_type=%s",
+            len(audio_bytes),
+            media_type,
+        )
+
+        tmp_input = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp_input_path = tmp_input.name
+        tmp_input.write(audio_bytes)
+        tmp_input.close()
+
+        converted_path: Optional[str] = None
+        try:
+            # Normalize to WAV/mono for whisper for consistent results
+            try:
+                convert_result = audio_processor.convert_audio_format(
+                    tmp_input_path,
+                    output_format="wav",
+                    sample_rate=sample_rate or 16000,
+                    channels=1,
+                )
+                if not convert_result.get("conversion_success"):
+                    raise RuntimeError(convert_result.get("error") or "conversion failed")
+                converted_path = convert_result.get("output_path")
+            except Exception as exc:
+                logger.error("Audio normalization failed: %s", exc)
+                raise RuntimeError("Unable to normalize audio snippet") from exc
+
+            analysis = audio_processor.analyze_audio_file(converted_path)
+            if not analysis.get("analysis_success"):
+                raise RuntimeError("Unable to analyze audio snippet")
+
+            duration_sec = float(analysis.get("duration_seconds", 0.0))
+            duration_ms = int(duration_sec * 1000)
+
+            if max_duration_ms and duration_ms > max_duration_ms:
+                raise ValueError("audio snippet duration exceeds limit")
+
+            transcription = self.transcribe_audio(converted_path)
+            if not transcription.get("transcription_success"):
+                raise RuntimeError(transcription.get("error") or "transcription failed")
+
+            text = transcription.get("text", "").strip()
+            confidence = float(transcription.get("confidence_score", 0.0))
+
+            logger.info(
+                "[DICTATION] snippet transcription complete duration_ms=%s text_len=%s",
+                duration_ms,
+                len(text),
+            )
+
+            return {
+                "text": text,
+                "confidence": confidence,
+                "duration_ms": duration_ms,
+            }
+
+        finally:
+            try:
+                os.unlink(tmp_input_path)
+            except Exception:
+                pass
+            if converted_path and os.path.exists(converted_path):
+                try:
+                    os.unlink(converted_path)
+                except Exception:
+                    pass
     
     def _calculate_confidence(self, segments: List[Dict[str, Any]]) -> float:
         """
