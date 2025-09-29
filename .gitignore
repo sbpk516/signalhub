@@ -225,3 +225,10 @@ AGENTS.md
 README.md
 *.md
 docs/journal/
+
+# Allow tracked specs and prompt packs
+!docs/spec.md
+!docs/acceptance.md
+!docs/project-rules.md
+!docs/prompt-pack/
+!docs/prompt-pack/*.md

@@ -1,0 +1,17 @@
+{
+  "name": "signalhub-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "prepare": "husky install",
+    "scaffold": "tsx scripts/scaffold.ts",
+    "lint": "npm --prefix frontend run lint && python -m flake8 backend/app",
+    "type-check": "npm --prefix frontend run type-check && python -m mypy backend/app",
+    "test": "python -m pytest backend/tests -q",
+    "test:all": "python -m pytest -q"
+  },
+  "devDependencies": {
+    "husky": "^9.1.6",
+    "tsx": "^4.19.0"
+  }
+}

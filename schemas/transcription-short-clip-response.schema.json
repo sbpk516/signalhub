@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signalhub.local/schemas/transcription-short-clip-response.schema.json",
+  "title": "TranscriptionShortClipResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ok",
+    "jobId",
+    "clipId",
+    "status",
+    "queuedAt"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "Indicates whether the request was accepted or the last chunk processed successfully."
+    },
+    "jobId": {
+      "type": "string",
+      "description": "Deterministic identifier for the fallback job (uuid-v4).",
+      "format": "uuid"
+    },
+    "clipId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Echoes the originating clip identifier."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "processing",
+        "succeeded",
+        "failed"
+      ],
+      "description": "Current lifecycle state for the fallback attempt."
+    },
+    "queuedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp of when the fallback job entered the queue."
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp captured once the fallback finishes."
+    },
+    "errorMessage": {
+      "type": "string",
+      "description": "Human-readable failure summary returned when status=failed."
+    },
+    "estimatedLatencyMs": {
+      "type": "integer",
+      "description": "Estimated processing latency communicated during queue acknowledgement."
+    }
+  }
+}
