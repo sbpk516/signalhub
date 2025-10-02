@@ -1153,7 +1153,14 @@ function LiveMicPanel({
       if (sessionId) {
         console.log('[LIVE] stop(): calling /live/stop', { sessionId })
         const t0 = performance.now()
-        const res = await apiClient.post(`/api/v1/live/stop?session_id=${encodeURIComponent(sessionId)}`)
+        const res = await apiClient.post(
+          `/api/v1/live/stop?session_id=${encodeURIComponent(sessionId)}`,
+          undefined, // No request body
+          {
+            // Set indefinite timeout for this request
+            timeout: 0,
+          }
+        )
         const dt = Math.round(performance.now() - t0)
         const txt = (res.data?.final_text as string) || ''
         const cid = (res.data?.call_id as string) || null
