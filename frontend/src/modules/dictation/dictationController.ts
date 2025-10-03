@@ -5,8 +5,15 @@ import {
   DictationSnippetPayload,
   submitDictationSnippetWithRetry,
 } from './dictationService'
+import { insertDictationText } from './textInsertion'
 
 type DictationStatus = 'idle' | 'permission' | 'recording' | 'processing' | 'error'
+
+interface DictationPermissionState {
+  requestId: number | null
+  accessibilityOk: boolean
+  micOk: boolean
+}
 
 type DictationEvent = {
   type: string
@@ -39,6 +46,7 @@ export interface DictationControllerState {
   error: string | null
   isEnabled: boolean
   processing: DictationProcessingSnapshot
+  permission: DictationPermissionState | null
 }
 
 const initialProcessingSnapshot: DictationProcessingSnapshot = {
@@ -55,6 +63,7 @@ const initialState: DictationControllerState = {
   error: null,
   isEnabled: false,
   processing: { ...initialProcessingSnapshot },
+  permission: null,
 }
 
 export function useDictationController(): DictationControllerState {
@@ -104,6 +113,7 @@ export function useDictationController(): DictationControllerState {
     recorderMimeTypeRef.current = null
     pendingSnippetRef.current = null
     cancelActiveUpload()
+    setState(prev => ({ ...prev, permission: null }))
   }, [cancelActiveUpload, clearWatchdogTimer])
 
   const stopStreamTracks = useCallback(() => {
@@ -250,10 +260,14 @@ export function useDictationController(): DictationControllerState {
               requestId,
               transcriptLength: result.transcript?.length ?? 0,
             })
+            const transcript = result.transcript ?? ''
+            void insertDictationText(transcript).then(outcome => {
+              log('debug', 'dictation text inserted', outcome)
+            })
             setState(prev => ({
               ...prev,
               status: 'idle',
-              transcript: result.transcript ?? prev.transcript,
+              transcript: transcript || prev.transcript,
               confidence: typeof result.confidence === 'number' ? result.confidence : prev.confidence,
               error: null,
               processing: {
@@ -312,13 +326,43 @@ export function useDictationController(): DictationControllerState {
   const handlePermissionEvent = useCallback((event: DictationEvent) => {
     if (!event) return
     if (event.type === 'dictation:permission-required') {
-      setState(prev => ({ ...prev, status: 'permission', error: null }))
+      const payload = (event.payload ?? {}) as {
+        requestId?: unknown
+        accessibilityOk?: unknown
+        micOk?: unknown
+      }
+      const requestId = typeof payload.requestId === 'number' ? payload.requestId : null
+      const accessibilityOk = payload.accessibilityOk !== false
+      const micOk = payload.micOk !== false
+      setState(prev => ({
+        ...prev,
+        status: 'permission',
+        error: null,
+        permission: {
+          requestId,
+          accessibilityOk,
+          micOk,
+        },
+      }))
     }
     if (event.type === 'dictation:permission-denied') {
-      setState(prev => ({ ...prev, status: 'error', error: 'dictation permission denied' }))
+      setState(prev => ({
+        ...prev,
+        status: 'error',
+        error: 'dictation permission denied',
+        permission: null,
+      }))
     }
     if (event.type === 'dictation:permission-granted') {
-      setState(prev => ({ ...prev, status: 'recording', error: null }))
+      setState(prev => ({
+        ...prev,
+        status: 'recording',
+        error: null,
+        permission: null,
+      }))
+    }
+    if (event.type === 'dictation:permission-cleared') {
+      setState(prev => ({ ...prev, permission: null }))
     }
   }, [])
 
@@ -440,7 +484,12 @@ export function useDictationController(): DictationControllerState {
         pendingSnippetRef.current = null
         break
       case 'dictation:permission-denied':
-        setState(prev => ({ ...prev, status: 'error', error: 'dictation permission denied' }))
+        setState(prev => ({
+          ...prev,
+          status: 'error',
+          error: 'dictation permission denied',
+          permission: null,
+        }))
         break
       case 'dictation:listener-fallback':
         setState(prev => ({ ...prev, status: 'error', error: 'dictation listener unavailable' }))

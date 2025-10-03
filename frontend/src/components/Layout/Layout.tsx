@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react'
 import { Header } from '../Header'
 import { Sidebar } from '../Sidebar'
 import { Dashboard, Capture, Transcripts, Analytics, Settings } from '../../pages'
+import { DictationOverlay } from '../../modules/dictation/dictationOverlay'
 
 const Layout: React.FC = () => {
   console.log('[LAYOUT] Component rendering...')
@@ -90,6 +91,7 @@ const Layout: React.FC = () => {
         onDismissUpdate={handleDismissUpdate}
         onDownloadUpdate={handleDownloadUpdate}
       />
+      <DictationOverlay />
       <div className="flex">
         <Sidebar 
           isOpen={sidebarOpen} 

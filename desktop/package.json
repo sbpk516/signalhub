@@ -11,7 +11,8 @@
     "start": "electron .",
     "pack": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder --dir -c electron-builder.yml",
     "prepack:check": "bash ../scripts/check-prepack.sh",
-    "dist": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml"
+    "dist": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml",
+    "test": "node --test"
   },
   "dependencies": {
     "semver": "^7.6.3"

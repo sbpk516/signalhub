@@ -219,4 +219,15 @@ contextBridge.exposeInMainWorld('signalhubDictation', {
       throw error
     }
   },
+  async typeText(payload = {}) {
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new Error('Invalid type payload')
+      }
+      return await ipcRenderer.invoke('dictation:type-text', payload)
+    } catch (error) {
+      console.error('[Preload] Failed to request dictation typeText', error)
+      throw error
+    }
+  },
 })

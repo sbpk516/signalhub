@@ -1,5 +1,7 @@
 const EventEmitter = require('events')
 
+const { createGlobalKeyListenerFactory } = require('./global-key-listener')
+
 const PERMISSION_TIMEOUT_MS = 5000
 
 function createLogger(bridge) {
@@ -44,7 +46,7 @@ function createLogger(bridge) {
 }
 
 class DictationManager extends EventEmitter {
-  constructor({ logger } = {}) {
+  constructor({ logger, listenerFactory } = {}) {
     super()
     this._log = createLogger(logger)
     this._config = null
@@ -53,7 +55,7 @@ class DictationManager extends EventEmitter {
     this._nut = null
     this._keyboard = null
     this._globalListener = null
-    this._listenerFactory = null
+    this._listenerFactory = listenerFactory || null
     this._listenerCallback = null
     this._listenerStarted = false
     this._keyEnum = null
@@ -65,6 +67,32 @@ class DictationManager extends EventEmitter {
     this._pressStartedAt = null
     this._permissionRequestSeq = 0
     this._pendingPermission = null
+  }
+
+  async typeText(text) {
+    if (!text || typeof text !== 'string') {
+      this._log.warn('typeText invoked without text')
+      return { ok: false, reason: 'empty_text' }
+    }
+
+    try {
+      if (!this._nut) {
+        // eslint-disable-next-line global-require
+        this._nut = require('@nut-tree-fork/nut-js')
+        this._keyboard = this._nut.keyboard
+        this._log.info('nut-js loaded for dictation typing')
+      }
+      if (!this._keyboard || typeof this._keyboard.type !== 'function') {
+        this._log.error('typeText missing keyboard type function')
+        return { ok: false, reason: 'keyboard_unavailable' }
+      }
+      await this._keyboard.type(text)
+      this._log.info('typeText completed', { length: text.length })
+      return { ok: true }
+    } catch (error) {
+      this._log.error('typeText failed', { error: error.message })
+      return { ok: false, reason: 'exception', error: error.message }
+    }
   }
 
   async startListening(initialConfig = {}) {
@@ -92,8 +120,7 @@ class DictationManager extends EventEmitter {
 
     if (!this._listenerFactory) {
       try {
-        // eslint-disable-next-line global-require
-        this._listenerFactory = require('node-global-key-listener').GlobalKeyboardListener
+        this._listenerFactory = createGlobalKeyListenerFactory()
         this._log.info('node-global-key-listener loaded for dictation manager')
       } catch (error) {
         this._log.error('failed to load node-global-key-listener', { error: error.message })

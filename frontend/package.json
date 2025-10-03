@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "check": "bash ../scripts/frontend-health-check.sh",
     "type-check": "tsc --noEmit",
+    "test:dictation": "tsc --project tsconfig.test.json && node --test dist-test/test/*.js",
     "clean": "rm -rf node_modules/.vite dist",
     "restart": "pkill -f vite && npm run dev"
   },

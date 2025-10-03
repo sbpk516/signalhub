@@ -558,6 +558,19 @@ ipcMain.handle('dictation:cancel-active-press', async (_event, payload = {}) => 
   }
 })
 
+ipcMain.handle('dictation:type-text', async (_event, payload = {}) => {
+  try {
+    const manager = getDictationManager()
+    if (!payload || typeof payload.text !== 'string') {
+      return { ok: false, message: 'invalid_text' }
+    }
+    return await manager.typeText(payload.text)
+  } catch (error) {
+    logLine('dictation_type_text_error', error.message)
+    return { ok: false, message: error.message }
+  }
+})
+
 ipcMain.handle('open-update-download', async () => {
   const manifest = getLatestManifest()
   if (!manifest || !manifest.downloadUrl) {
