@@ -409,12 +409,24 @@ app.on('ready', async () => {
       accessibilityOk,
       micOk,
     })
+    const requestId = payload && typeof payload.requestId === 'number' ? payload.requestId : null
     if (!accessibilityOk || !micOk) {
       broadcastDictationLifecycle('dictation:permission-required', {
         ...payload,
         accessibilityOk,
         micOk,
       })
+      return
+    }
+    if (requestId !== null) {
+      const granted = manager.grantPermission({ requestId, source: 'auto-check' })
+      if (!granted) {
+        logLine('dictation_permission_autogrant_failed', { requestId })
+      } else {
+        logLine('dictation_permission_autogranted', { requestId })
+      }
+    } else {
+      logLine('dictation_permission_autogrant_missing_request', payload)
     }
   })
   manager.on('dictation:permission-granted', payload => {

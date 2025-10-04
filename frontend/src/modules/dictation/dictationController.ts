@@ -77,6 +77,9 @@ export function useDictationController(): DictationControllerState {
   const recorderMimeTypeRef = useRef<string | null>(null)
   const pendingSnippetRef = useRef<DictationSnippetPayload | null>(null)
   const activeUploadAbortRef = useRef<AbortController | null>(null)
+  const pendingPressRef = useRef<DictationEvent['payload'] | null>(null)
+  const waitingForPermissionRef = useRef(false)
+  const recordingStartInFlightRef = useRef(false)
 
   const log = useCallback((level: LogLevel, message: string, meta: Record<string, unknown> = {}) => {
     const logger = (console[level] as typeof console.log) || console.log
@@ -113,6 +116,9 @@ export function useDictationController(): DictationControllerState {
     recorderMimeTypeRef.current = null
     pendingSnippetRef.current = null
     cancelActiveUpload()
+    pendingPressRef.current = null
+    waitingForPermissionRef.current = false
+    recordingStartInFlightRef.current = false
     setState(prev => ({ ...prev, permission: null }))
   }, [cancelActiveUpload, clearWatchdogTimer])
 
@@ -323,57 +329,39 @@ export function useDictationController(): DictationControllerState {
     [cancelActiveUpload, log],
   )
 
-  const handlePermissionEvent = useCallback((event: DictationEvent) => {
-    if (!event) return
-    if (event.type === 'dictation:permission-required') {
-      const payload = (event.payload ?? {}) as {
-        requestId?: unknown
-        accessibilityOk?: unknown
-        micOk?: unknown
+  const attemptStartRecording = useCallback(
+    (origin: 'press-start' | 'permission-granted') => {
+      if (!pendingPressRef.current) {
+        log('debug', 'start recording skipped – no active press', { origin })
+        return
       }
-      const requestId = typeof payload.requestId === 'number' ? payload.requestId : null
-      const accessibilityOk = payload.accessibilityOk !== false
-      const micOk = payload.micOk !== false
-      setState(prev => ({
-        ...prev,
-        status: 'permission',
-        error: null,
-        permission: {
-          requestId,
-          accessibilityOk,
-          micOk,
-        },
-      }))
-    }
-    if (event.type === 'dictation:permission-denied') {
-      setState(prev => ({
-        ...prev,
-        status: 'error',
-        error: 'dictation permission denied',
-        permission: null,
-      }))
-    }
-    if (event.type === 'dictation:permission-granted') {
-      setState(prev => ({
-        ...prev,
-        status: 'recording',
-        error: null,
-        permission: null,
-      }))
-    }
-    if (event.type === 'dictation:permission-cleared') {
-      setState(prev => ({ ...prev, permission: null }))
-    }
-  }, [])
+      if (waitingForPermissionRef.current) {
+        log('debug', 'start recording gated by permission', { origin })
+        return
+      }
+      if (recordingStartInFlightRef.current) {
+        log('debug', 'start recording already in flight', { origin })
+        return
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        log('warn', 'start recording skipped – recorder already active', { origin })
+        return
+      }
 
-  const handleLifecycleEvent = useCallback((event: DictationEvent) => {
-    if (!event) return
-    const payload = event.payload || {}
-    switch (event.type) {
-      case 'dictation:press-start':
-        void startRecordingSession().then(recorder => {
+      recordingStartInFlightRef.current = true
+
+      void startRecordingSession()
+        .then(recorder => {
+          recordingStartInFlightRef.current = false
+
+          if (!pendingPressRef.current) {
+            log('warn', 'recording start aborted – press cleared', { origin })
+            stopRecorder()
+            return
+          }
+
           if (!recorder) {
-            log('error', 'recorder unavailable on press-start')
+            log('error', 'recorder unavailable on start attempt', { origin })
             return
           }
 
@@ -417,7 +405,7 @@ export function useDictationController(): DictationControllerState {
               }
             }, MAX_RECORDING_DURATION_MS)
             setState(prev => ({ ...prev, status: 'recording', error: null }))
-            log('debug', 'recording started', { event: 'press-start' })
+            log('debug', 'recording started', { origin })
           } catch (error) {
             log('error', 'failed to start recorder', { error })
             setState(prev => ({ ...prev, status: 'error', error: 'failed to start recording' }))
@@ -425,9 +413,83 @@ export function useDictationController(): DictationControllerState {
             resetRecordingState()
           }
         })
+        .catch(error => {
+          recordingStartInFlightRef.current = false
+          log('error', 'failed to start recording session', { origin, error })
+        })
+    },
+    [clearWatchdogTimer, log, resetRecordingState, startRecordingSession, stopRecorder, stopStreamTracks],
+  )
+
+  const handlePermissionEvent = useCallback((event: DictationEvent) => {
+    if (!event) return
+    if (event.type === 'dictation:permission-required') {
+      const payload = (event.payload ?? {}) as {
+        requestId?: unknown
+        accessibilityOk?: unknown
+        micOk?: unknown
+      }
+      const requestId = typeof payload.requestId === 'number' ? payload.requestId : null
+      const accessibilityOk = payload.accessibilityOk !== false
+      const micOk = payload.micOk !== false
+      waitingForPermissionRef.current = true
+      setState(prev => ({
+        ...prev,
+        status: 'permission',
+        error: null,
+        permission: {
+          requestId,
+          accessibilityOk,
+          micOk,
+        },
+      }))
+    }
+    if (event.type === 'dictation:permission-denied') {
+      waitingForPermissionRef.current = false
+      pendingPressRef.current = null
+      setState(prev => ({
+        ...prev,
+        status: 'error',
+        error: 'dictation permission denied',
+        permission: null,
+      }))
+    }
+    if (event.type === 'dictation:permission-granted') {
+      waitingForPermissionRef.current = false
+      if (!pendingPressRef.current) {
+        log('debug', 'permission granted with no active press; returning to idle')
+        setState(prev => ({ ...prev, status: 'idle', error: null, permission: null }))
+        return
+      }
+      setState(prev => ({
+        ...prev,
+        status: 'recording',
+        error: null,
+        permission: null,
+      }))
+      attemptStartRecording('permission-granted')
+    }
+    if (event.type === 'dictation:permission-cleared') {
+      waitingForPermissionRef.current = false
+      pendingPressRef.current = null
+      setState(prev => ({ ...prev, permission: null }))
+    }
+  }, [attemptStartRecording])
+
+  const handleLifecycleEvent = useCallback((event: DictationEvent) => {
+    if (!event) return
+    const payload = event.payload || {}
+    switch (event.type) {
+      case 'dictation:press-start':
+        pendingPressRef.current = payload
+        waitingForPermissionRef.current = true
+        setState(prev => ({ ...prev, status: 'recording', error: null }))
+        attemptStartRecording('press-start')
         break
       case 'dictation:press-end':
         setState(prev => ({ ...prev, status: 'processing', error: null }))
+        waitingForPermissionRef.current = false
+        pendingPressRef.current = null
         if (!mediaRecorderRef.current) {
           log('warn', 'press-end received without active recorder')
           break
@@ -475,6 +537,8 @@ export function useDictationController(): DictationControllerState {
         break
       case 'dictation:press-cancel':
         setState(prev => ({ ...prev, status: 'idle', error: null }))
+        waitingForPermissionRef.current = false
+        pendingPressRef.current = null
         if (!mediaRecorderRef.current && bufferedChunksRef.current.length === 0) {
           break
         }
@@ -490,14 +554,18 @@ export function useDictationController(): DictationControllerState {
           error: 'dictation permission denied',
           permission: null,
         }))
+        waitingForPermissionRef.current = false
+        pendingPressRef.current = null
         break
       case 'dictation:listener-fallback':
         setState(prev => ({ ...prev, status: 'error', error: 'dictation listener unavailable' }))
+        waitingForPermissionRef.current = false
+        pendingPressRef.current = null
         break
       default:
         break
     }
-  }, [buildSnippetPayload, clearWatchdogTimer, log, resetRecordingState, startRecordingSession, startSnippetUpload, stopRecorder])
+  }, [attemptStartRecording, buildSnippetPayload, clearWatchdogTimer, log, resetRecordingState, startSnippetUpload, stopRecorder])
 
   useEffect(() => {
     if (window.signalhubDictation) {
