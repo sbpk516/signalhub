@@ -446,6 +446,10 @@ app.on('ready', async () => {
       broadcastDictationLifecycle('dictation:listener-fallback', payload)
     }
   })
+  manager.on('dictation:stuck-key', payload => {
+    logLine('dictation_stuck_key_detected', payload)
+    broadcastDictationLifecycle('dictation:stuck-key', payload)
+  })
   createAppMenu()
   await createMainWindow()
   try {

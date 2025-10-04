@@ -21,12 +21,29 @@ type DictationEvent = {
 }
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+type NotificationSeverity = 'info' | 'warning' | 'error'
 
 export interface DictationProcessingSnapshot {
   requestId: string | null
   attempt: number
   startedAt: number | null
   lastError: string | null
+}
+
+export interface DictationNotification {
+  id: string
+  severity: NotificationSeverity
+  title: string
+  message: string
+  autoCloseMs?: number | null
+}
+
+interface SafeModeState {
+  engaged: boolean
+  reason: string | null
+  fatalErrorCount: number
+  lastErrorId: string | null
+  detail: string | null
 }
 
 const MEDIA_CONSTRAINTS: MediaStreamConstraints = {
@@ -39,7 +56,7 @@ const MEDIA_CONSTRAINTS: MediaStreamConstraints = {
 const RECORDER_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
 const MAX_RECORDING_DURATION_MS = 120_000
 
-export interface DictationControllerState {
+interface DictationInternalState {
   status: DictationStatus
   transcript: string
   confidence: number
@@ -49,6 +66,14 @@ export interface DictationControllerState {
   permission: DictationPermissionState | null
 }
 
+export interface DictationControllerState extends DictationInternalState {
+  notifications: DictationNotification[]
+  safeMode: SafeModeState
+  dismissNotification: (id: string) => void
+  clearNotifications: () => void
+  exitSafeMode: () => Promise<void>
+}
+
 const initialProcessingSnapshot: DictationProcessingSnapshot = {
   requestId: null,
   attempt: 0,
@@ -56,7 +81,7 @@ const initialProcessingSnapshot: DictationProcessingSnapshot = {
   lastError: null,
 }
 
-const initialState: DictationControllerState = {
+const initialState: DictationInternalState = {
   status: 'idle',
   transcript: '',
   confidence: 0,
@@ -67,7 +92,7 @@ const initialState: DictationControllerState = {
 }
 
 export function useDictationController(): DictationControllerState {
-  const [state, setState] = useState<DictationControllerState>(initialState)
+  const [state, setState] = useState<DictationInternalState>(initialState)
   const permissionUnsubscribe = useRef<() => void>(() => {})
   const lifecycleUnsubscribe = useRef<() => void>(() => {})
   const mediaStreamRef = useRef<MediaStream | null>(null)
@@ -80,6 +105,17 @@ export function useDictationController(): DictationControllerState {
   const pendingPressRef = useRef<DictationEvent['payload'] | null>(null)
   const waitingForPermissionRef = useRef(false)
   const recordingStartInFlightRef = useRef(false)
+  const notificationTimersRef = useRef<Map<string, number>>(new Map())
+  const [notifications, setNotifications] = useState<DictationNotification[]>([])
+  const [safeMode, setSafeMode] = useState<SafeModeState>({
+    engaged: false,
+    reason: null,
+    fatalErrorCount: 0,
+    lastErrorId: null,
+    detail: null,
+  })
+  const fatalErrorRef = useRef<{ count: number; lastErrorId: string | null }>({ count: 0, lastErrorId: null })
+  const dictationBridge = (window as unknown as { signalhubDictation?: any })?.signalhubDictation || null
 
   const log = useCallback((level: LogLevel, message: string, meta: Record<string, unknown> = {}) => {
     const logger = (console[level] as typeof console.log) || console.log
@@ -107,6 +143,150 @@ export function useDictationController(): DictationControllerState {
       activeUploadAbortRef.current = null
     }
   }, [log])
+
+  const dismissNotification = useCallback((id: string) => {
+    const timer = notificationTimersRef.current.get(id)
+    if (timer) {
+      window.clearTimeout(timer)
+      notificationTimersRef.current.delete(id)
+    }
+    setNotifications(prev => prev.filter(notification => notification.id !== id))
+  }, [])
+
+  const clearNotifications = useCallback(() => {
+    notificationTimersRef.current.forEach(timer => window.clearTimeout(timer))
+    notificationTimersRef.current.clear()
+    setNotifications([])
+  }, [])
+
+  const pushNotification = useCallback((notification: Omit<DictationNotification, 'id'> & { id?: string }) => {
+    const id = notification.id || (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `dict-note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
+
+    setNotifications(prev => {
+      const next = prev.filter(existing => existing.id !== id)
+      next.push({ ...notification, id })
+      return next
+    })
+
+    if (notification.autoCloseMs && notification.autoCloseMs > 0) {
+      const timer = window.setTimeout(() => {
+        notificationTimersRef.current.delete(id)
+        dismissNotification(id)
+      }, notification.autoCloseMs)
+      notificationTimersRef.current.set(id, timer)
+    }
+
+    return id
+  }, [dismissNotification])
+
+  const resetSafeModeState = useCallback(() => {
+    fatalErrorRef.current = { count: 0, lastErrorId: null }
+    setSafeMode({ engaged: false, reason: null, fatalErrorCount: 0, lastErrorId: null, detail: null })
+  }, [])
+
+  const enterSafeMode = useCallback((reason: string, detail: string) => {
+    const errorId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : `safe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+    const fatalCount = fatalErrorRef.current.count
+    fatalErrorRef.current.lastErrorId = errorId
+    setSafeMode({ engaged: true, reason, fatalErrorCount: fatalCount, lastErrorId: errorId, detail })
+
+    pushNotification({
+      severity: 'error',
+      title: 'Dictation disabled',
+      message: `We detected repeated failures (“${detail}”) and paused press-and-hold dictation. Resolve the issue, then re-enable it below.`,
+    })
+
+    try {
+      dictationBridge?.cancelActivePress?.({
+        reason: 'safe_mode_engaged',
+        details: { fatalCount, errorId, cause: reason, detail },
+      })
+    } catch (bridgeError) {
+      log('warn', 'failed to notify main process about safe mode engagement', { error: bridgeError instanceof Error ? bridgeError.message : String(bridgeError) })
+    }
+
+    if (dictationBridge?.updateSettings) {
+      dictationBridge.updateSettings({ enabled: false }).catch((error: unknown) => {
+        log('warn', 'failed to persist safe mode disable flag', { error })
+      })
+    }
+  }, [dictationBridge, log, pushNotification])
+
+  const registerFatalError = useCallback((reason: string, message: string, options: { countsTowardSafeMode?: boolean } = {}) => {
+    const { countsTowardSafeMode = true } = options
+    log('warn', 'dictation fatal observation', { reason, message, countsTowardSafeMode })
+    if (!countsTowardSafeMode) {
+      return
+    }
+
+    fatalErrorRef.current.count += 1
+    const fatalCount = fatalErrorRef.current.count
+
+    if (fatalCount >= 3 && !safeMode.engaged) {
+      enterSafeMode(reason, message)
+    }
+  }, [enterSafeMode, log, safeMode.engaged])
+
+  const exitSafeMode = useCallback(async () => {
+    if (!safeMode.engaged) {
+      return
+    }
+
+    try {
+      if (safeMode.reason === 'media_devices_unavailable' || safeMode.reason === 'recorder_init_failed') {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          pushNotification({
+            severity: 'error',
+            title: 'Cannot re-enable dictation yet',
+            message: 'Your system still lacks microphone access support.',
+          })
+          return
+        }
+        try {
+          const probe = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS)
+          probe.getTracks().forEach(track => track.stop())
+        } catch (probeError) {
+          pushNotification({
+            severity: 'error',
+            title: 'Cannot re-enable dictation yet',
+            message: 'Microphone is still unavailable. Update system permissions and try again.',
+          })
+          return
+        }
+      }
+
+      if (dictationBridge?.updateSettings) {
+        await dictationBridge.updateSettings({ enabled: true })
+        if (typeof dictationBridge.getSettings === 'function') {
+          const latest = await dictationBridge.getSettings()
+          if (!latest || latest.enabled !== true) {
+            throw new Error('dictation_not_enabled')
+          }
+        }
+      } else {
+        throw new Error('missing_dictation_bridge')
+      }
+      resetSafeModeState()
+      pushNotification({
+        severity: 'info',
+        title: 'Dictation re-enabled',
+        message: 'Press-and-hold dictation has been reactivated.',
+        autoCloseMs: 4000,
+      })
+    } catch (error) {
+      log('error', 'failed to exit safe mode', { error })
+      pushNotification({
+        severity: 'error',
+        title: 'Failed to re-enable dictation',
+        message: 'We could not re-enable the feature. Check your connection and try again.',
+      })
+    }
+  }, [dictationBridge, log, pushNotification, resetSafeModeState, safeMode.engaged, safeMode.reason])
 
   const resetRecordingState = useCallback(() => {
     clearWatchdogTimer()
@@ -143,6 +323,12 @@ export function useDictationController(): DictationControllerState {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       log('error', 'media devices API unavailable')
       setState(prev => ({ ...prev, status: 'error', error: 'microphone access unsupported' }))
+      pushNotification({
+        severity: 'error',
+        title: 'Microphone unavailable',
+        message: 'Your system does not expose the microphone API required for dictation.',
+      })
+      registerFatalError('media_devices_unavailable', 'Microphone access unsupported on this device.', { countsTowardSafeMode: true })
       return null
     }
 
@@ -154,6 +340,11 @@ export function useDictationController(): DictationControllerState {
       setState(prev => ({ ...prev, status: 'error', error: 'microphone permission denied' }))
       stopStreamTracks()
       resetRecordingState()
+      pushNotification({
+        severity: 'warning',
+        title: 'Microphone permission denied',
+        message: 'Allow microphone access to use press-and-hold dictation.',
+      })
       return null
     }
 
@@ -170,9 +361,15 @@ export function useDictationController(): DictationControllerState {
       stopStreamTracks()
       resetRecordingState()
       setState(prev => ({ ...prev, status: 'error', error: 'failed to initialize recorder' }))
+      pushNotification({
+        severity: 'error',
+        title: 'Recorder initialization failed',
+        message: 'We could not start recording audio. Try again or restart the app.',
+      })
+      registerFatalError('recorder_init_failed', 'Failed to initialize the audio recorder.', { countsTowardSafeMode: true })
       return null
     }
-  }, [log, resetRecordingState, selectSupportedMimeType, setState, stopStreamTracks])
+  }, [log, pushNotification, registerFatalError, resetRecordingState, selectSupportedMimeType, stopStreamTracks])
 
   const stopRecorder = useCallback(
     (options?: { preserveBuffer?: boolean }) => {
@@ -303,6 +500,12 @@ export function useDictationController(): DictationControllerState {
               lastError: errorMessage,
             },
           }))
+          pushNotification({
+            severity: 'error',
+            title: 'Dictation upload failed',
+            message: errorMessage,
+          })
+          registerFatalError('upload_failed', errorMessage, { countsTowardSafeMode: true })
         })
         .catch(error => {
           const errorMessage = error instanceof Error ? error.message : 'dictation upload failed'
@@ -318,6 +521,12 @@ export function useDictationController(): DictationControllerState {
               lastError: errorMessage,
             },
           }))
+          pushNotification({
+            severity: 'error',
+            title: 'Dictation upload failed',
+            message: errorMessage,
+          })
+          registerFatalError('upload_exception', errorMessage, { countsTowardSafeMode: true })
         })
         .finally(() => {
           if (activeUploadAbortRef.current === uploadAbort) {
@@ -326,7 +535,7 @@ export function useDictationController(): DictationControllerState {
           pendingSnippetRef.current = null
         })
     },
-    [cancelActiveUpload, log],
+    [cancelActiveUpload, log, pushNotification, registerFatalError],
   )
 
   const attemptStartRecording = useCallback(
@@ -386,6 +595,12 @@ export function useDictationController(): DictationControllerState {
               log('warn', 'recording watchdog triggered', { timeoutMs: MAX_RECORDING_DURATION_MS })
               stopRecorder()
               setState(prev => ({ ...prev, status: 'error', error: 'recording timed out' }))
+              pushNotification({
+                severity: 'error',
+                title: 'Dictation timed out',
+                message: 'Recording took too long. Release the shortcut sooner and try again.',
+              })
+              registerFatalError('recording_timeout', 'Recording timed out before completion.', { countsTowardSafeMode: false })
               if (window.signalhubDictation && typeof window.signalhubDictation.cancelActivePress === 'function') {
                 void window.signalhubDictation
                   .cancelActivePress({
@@ -418,7 +633,7 @@ export function useDictationController(): DictationControllerState {
           log('error', 'failed to start recording session', { origin, error })
         })
     },
-    [clearWatchdogTimer, log, resetRecordingState, startRecordingSession, stopRecorder, stopStreamTracks],
+    [clearWatchdogTimer, log, pushNotification, registerFatalError, resetRecordingState, startRecordingSession, stopRecorder, stopStreamTracks],
   )
 
   const handlePermissionEvent = useCallback((event: DictationEvent) => {
@@ -443,6 +658,14 @@ export function useDictationController(): DictationControllerState {
           micOk,
         },
       }))
+      if (!accessibilityOk || !micOk) {
+        pushNotification({
+          severity: 'info',
+          title: 'Microphone access required',
+          message: 'Grant accessibility and microphone permissions to start dictation.',
+          autoCloseMs: 6000,
+        })
+      }
     }
     if (event.type === 'dictation:permission-denied') {
       waitingForPermissionRef.current = false
@@ -453,6 +676,11 @@ export function useDictationController(): DictationControllerState {
         error: 'dictation permission denied',
         permission: null,
       }))
+      pushNotification({
+        severity: 'warning',
+        title: 'Permission denied',
+        message: 'Dictation stayed off because permissions were declined.',
+      })
     }
     if (event.type === 'dictation:permission-granted') {
       waitingForPermissionRef.current = false
@@ -474,7 +702,7 @@ export function useDictationController(): DictationControllerState {
       pendingPressRef.current = null
       setState(prev => ({ ...prev, permission: null }))
     }
-  }, [attemptStartRecording])
+  }, [attemptStartRecording, pushNotification])
 
   const handleLifecycleEvent = useCallback((event: DictationEvent) => {
     if (!event) return
@@ -484,6 +712,9 @@ export function useDictationController(): DictationControllerState {
         pendingPressRef.current = payload
         waitingForPermissionRef.current = true
         setState(prev => ({ ...prev, status: 'recording', error: null }))
+        if (safeMode.engaged) {
+          resetSafeModeState()
+        }
         attemptStartRecording('press-start')
         break
       case 'dictation:press-end':
@@ -532,6 +763,15 @@ export function useDictationController(): DictationControllerState {
               status: 'error',
               error: tooLarge ? 'failed to prepare audio snippet – too large' : 'failed to prepare audio snippet',
             }))
+            const errorMessage = tooLarge
+              ? 'Dictation snippet exceeded the maximum size. Try a shorter recording.'
+              : 'We could not prepare the dictation audio snippet.'
+            pushNotification({
+              severity: 'error',
+              title: 'Dictation preparation failed',
+              message: errorMessage,
+            })
+            registerFatalError('snippet_prepare_failed', errorMessage, { countsTowardSafeMode: false })
           }
         })()
         break
@@ -539,6 +779,17 @@ export function useDictationController(): DictationControllerState {
         setState(prev => ({ ...prev, status: 'idle', error: null }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
+        if (payload && typeof (payload as { reason?: unknown }).reason === 'string') {
+          const reason = (payload as { reason: string }).reason
+          if (reason === 'stuck_key_timeout') {
+            pushNotification({
+              severity: 'warning',
+              title: 'Shortcut reset',
+              message: 'We reset the dictation shortcut after detecting a stuck key.',
+            })
+            registerFatalError('stuck_key_timeout', 'Dictation shortcut became stuck.', { countsTowardSafeMode: false })
+          }
+        }
         if (!mediaRecorderRef.current && bufferedChunksRef.current.length === 0) {
           break
         }
@@ -561,11 +812,25 @@ export function useDictationController(): DictationControllerState {
         setState(prev => ({ ...prev, status: 'error', error: 'dictation listener unavailable' }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
+        pushNotification({
+          severity: 'error',
+          title: 'Dictation listener unavailable',
+          message: 'We lost access to the global shortcut listener. Restart SignalHub or re-enable permissions.',
+        })
+        registerFatalError('listener_failure', 'Dictation listener became unavailable.', { countsTowardSafeMode: true })
+        break
+      case 'dictation:stuck-key':
+        pushNotification({
+          severity: 'warning',
+          title: 'Stuck shortcut detected',
+          message: 'The dictation shortcut appeared to be held down. We reset it automatically.',
+        })
+        registerFatalError('stuck_key_event', 'Detected a stuck shortcut key combination.', { countsTowardSafeMode: false })
         break
       default:
         break
     }
-  }, [attemptStartRecording, buildSnippetPayload, clearWatchdogTimer, log, resetRecordingState, startSnippetUpload, stopRecorder])
+  }, [attemptStartRecording, buildSnippetPayload, clearWatchdogTimer, log, pushNotification, registerFatalError, resetRecordingState, resetSafeModeState, safeMode.engaged, startSnippetUpload, stopRecorder])
 
   useEffect(() => {
     if (window.signalhubDictation) {
@@ -590,5 +855,18 @@ export function useDictationController(): DictationControllerState {
       cancelActiveUpload()
     }
   }, [cancelActiveUpload, handleLifecycleEvent, handlePermissionEvent])
-  return state
+
+  useEffect(() => () => {
+    notificationTimersRef.current.forEach(timer => window.clearTimeout(timer))
+    notificationTimersRef.current.clear()
+  }, [])
+
+  return {
+    ...state,
+    notifications,
+    safeMode,
+    dismissNotification,
+    clearNotifications,
+    exitSafeMode,
+  }
 }

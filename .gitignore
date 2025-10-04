@@ -166,6 +166,7 @@ backend/build/
 backend/dist/
 backend/logs/
 backend/audio_uploads/
+backend/.pyinstaller_config/
 
 # Desktop Electron build artifacts (do not commit)
 desktop/node_modules/

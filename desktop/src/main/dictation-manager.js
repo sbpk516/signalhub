@@ -3,6 +3,7 @@ const EventEmitter = require('events')
 const { createGlobalKeyListenerFactory } = require('./global-key-listener')
 
 const PERMISSION_TIMEOUT_MS = 5000
+const STUCK_KEY_TIMEOUT_MS = 90_000
 
 function createLogger(bridge) {
   const emit = (level, message, meta) => {
@@ -67,6 +68,7 @@ class DictationManager extends EventEmitter {
     this._pressStartedAt = null
     this._permissionRequestSeq = 0
     this._pendingPermission = null
+    this._stuckKeyTimer = null
   }
 
   async typeText(text) {
@@ -186,6 +188,7 @@ class DictationManager extends EventEmitter {
     this._activeKeySet.clear()
     this._pressStartedAt = null
     this._clearPendingPermission({ reason: 'manager_stopped' })
+    this._clearStuckKeyTimer()
     this._log.info('dictation manager listening stopped (scaffold)')
   }
 
@@ -255,8 +258,9 @@ class DictationManager extends EventEmitter {
     this._lastEventTs = 0
     this._targetKeySet.clear()
     this._activeKeySet.clear()
-    this._pressStartedAt = null
+   this._pressStartedAt = null
     this._clearPendingPermission({ reason: 'manager_disposed' })
+    this._clearStuckKeyTimer()
     this.removeAllListeners()
     this._log.info('dictation manager disposed')
   }
@@ -656,10 +660,12 @@ class DictationManager extends EventEmitter {
         durationMs: 0,
       })
       this._requestPermission({ keyCode, rawEvent })
+      this._armStuckKeyTimer()
     } else if (this._state === 'armed') {
       // Re-enter pressed state if modifiers recover while still holding primary key
       if (this._isShortcutSatisfied()) {
         this._transitionState('pressed', { keyCode, rawEvent, reason: 'recovered' })
+        this._armStuckKeyTimer()
       }
     }
   }
@@ -701,10 +707,12 @@ class DictationManager extends EventEmitter {
       }
       this._pressStartedAt = null
       this._activeKeySet.clear()
+      this._clearStuckKeyTimer()
     }
   }
 
   _cancelPress(reason, meta = {}) {
+    this._clearStuckKeyTimer()
     if (this._state === 'idle') {
       return
     }
@@ -762,6 +770,43 @@ class DictationManager extends EventEmitter {
       return true
     }
     return false
+  }
+
+  _armStuckKeyTimer() {
+    if (!STUCK_KEY_TIMEOUT_MS || STUCK_KEY_TIMEOUT_MS <= 0) {
+      return
+    }
+    this._clearStuckKeyTimer()
+    this._stuckKeyTimer = setTimeout(() => {
+      this._handleStuckKeyTimeout()
+    }, STUCK_KEY_TIMEOUT_MS)
+  }
+
+  _clearStuckKeyTimer() {
+    if (this._stuckKeyTimer) {
+      clearTimeout(this._stuckKeyTimer)
+      this._stuckKeyTimer = null
+    }
+  }
+
+  _handleStuckKeyTimeout() {
+    this._stuckKeyTimer = null
+    if (this._state !== 'pressed' || !this._activeKeySet.size) {
+      return
+    }
+
+    const stuckKeys = Array.from(this._activeKeySet)
+    this._log.warn('stuck key detected - cancelling press', { stuckKeys })
+    this._cancelPress('stuck_key_timeout', { stuckKeys })
+    try {
+      this.emit('dictation:stuck-key', {
+        timestamp: Date.now(),
+        stuckKeys,
+        reason: 'timeout',
+      })
+    } catch (error) {
+      this._log.error('failed to emit stuck-key event', { error: error.message })
+    }
   }
 
   _parseShortcut(accelerator) {
