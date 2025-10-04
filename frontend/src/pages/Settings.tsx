@@ -1,66 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card } from '../components/Shared'
+import { DEFAULT_SHORTCUT, validateShortcut } from './SettingsValidation'
 
 type DictationSettings = {
   enabled: boolean
   shortcut: string
 }
 
-const DEFAULT_SHORTCUT = 'CommandOrControl+Shift+D'
+// default shortcut is declared in SettingsValidation to keep tests/runtime aligned
 
-type ShortcutValidation = {
-  level: 'error' | 'warning' | 'info'
-  message: string
-} | null
-
-function validateShortcut(raw: string): { normalized: string; validation: ShortcutValidation; isValid: boolean } {
-  const trimmed = (raw || '').trim()
-  if (!trimmed) {
-    return {
-      normalized: DEFAULT_SHORTCUT,
-      isValid: false,
-      validation: { level: 'error', message: 'Shortcut cannot be empty.' }
-    }
-  }
-
-  const tokens = trimmed.split('+').map(token => token.trim()).filter(Boolean)
-  if (tokens.length < 2) {
-    return {
-      normalized: trimmed,
-      isValid: false,
-      validation: { level: 'error', message: 'Use at least one modifier (Cmd/Ctrl/Alt/Shift) plus a key.' }
-    }
-  }
-
-  const modifierCandidates = ['commandorcontrol', 'command', 'cmd', 'control', 'ctrl', 'alt', 'option', 'shift', 'meta', 'super']
-  const hasModifier = tokens.slice(0, -1).some(token => modifierCandidates.includes(token.toLowerCase()))
-  if (!hasModifier) {
-    return {
-      normalized: trimmed,
-      isValid: false,
-      validation: { level: 'error', message: 'Add at least one modifier key to avoid accidental activation.' }
-    }
-  }
-
-  const keyToken = tokens[tokens.length - 1]
-  const normalizedKey = keyToken.length === 1 ? keyToken.toUpperCase() : keyToken
-  const normalizedTokens = [...tokens.slice(0, -1), normalizedKey]
-  const normalized = normalizedTokens.join('+')
-
-  const reservedWarnings = ['CommandOrControl+Q', 'Command+Q', 'Alt+F4', 'Ctrl+Alt+Delete']
-  if (reservedWarnings.some(candidate => candidate.toLowerCase() === normalized.toLowerCase())) {
-    return {
-      normalized,
-      isValid: true,
-      validation: {
-        level: 'warning',
-        message: 'This shortcut is commonly reserved by the OS. Consider choosing a different one.'
-      }
-    }
-  }
-
-  return { normalized, isValid: true, validation: null }
-}
+import type { ShortcutValidation } from './SettingsValidation'
 
 function normalizeSettings(candidate: unknown): DictationSettings {
   const source = (candidate && typeof candidate === 'object' ? candidate : {}) as Partial<DictationSettings>
@@ -276,7 +225,7 @@ const Settings: React.FC = () => {
               {shortcutValidationMessage}
               {!validation && (
                 <p className="text-xs text-gray-500 mt-2">
-                  Avoid common system shortcuts (Cmd+Q, Alt+F4). We recommend combining Command/Ctrl, Shift, and a letter key.
+                  Avoid system-reserved shortcuts (Cmd+Q, Alt+F4). Use a modifier + key, or combine two modifiers (for example, Command+Option).
                 </p>
               )}
             </div>
