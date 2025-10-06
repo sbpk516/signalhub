@@ -151,6 +151,9 @@ setup-git-aliases.sh
 troubleshoot-git-accounts.sh
 MULTIPLE_GITHUB_ACCOUNTS_CONCEPT_GUIDE.md
 GIT_ACCOUNT_MANAGER_GUIDE.md
+# Git Account Manager backup files
+*.bak.*
+git-account-manager.sh.bak.*
 
 # Debug logs (Local only)
 debug_logs/
@@ -163,6 +166,7 @@ backend/build/
 backend/dist/
 backend/logs/
 backend/audio_uploads/
+backend/.pyinstaller_config/
 
 # Desktop Electron build artifacts (do not commit)
 desktop/node_modules/
@@ -215,6 +219,7 @@ frontend/.parcel-cache/
 frontend/.eslintcache
 frontend/.stylelintcache
 frontend/.swc/
+frontend/dist-test/
 
 # Cursor AI Development Files (Local only)
 CURSOR_INSTRUCTIONS.md

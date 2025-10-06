@@ -11,13 +11,15 @@
     "start": "electron .",
     "pack": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder --dir -c electron-builder.yml",
     "prepack:check": "bash ../scripts/check-prepack.sh",
-    "dist": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml"
+    "dist": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml",
+    "test": "node --test"
   },
   "dependencies": {
     "semver": "^7.6.3"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "electron-rebuild": "^3.2.9",
     "electron": "^31.3.1",
     "electron-builder": "^24.13.3",
     "wait-on": "^7.2.0"
