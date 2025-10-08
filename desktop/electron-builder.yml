@@ -17,6 +17,9 @@ extraResources:
   # Include Whisper model cache for offline transcription
   - from: ../backend/whisper_cache
     to: whisper_cache
+  # Include native helper for global key listener (macOS)
+  - from: node_modules/node-global-key-listener/bin
+    to: bin
 mac:
   target: [zip]
   category: public.app-category.productivity

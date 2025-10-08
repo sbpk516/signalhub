@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   buildSnippetPayload,
-  DictationSnippetPayload,
   submitDictationSnippetWithRetry,
 } from './dictationService'
+import type { DictationSnippetPayload } from './dictationService'
 import { insertDictationText } from './textInsertion'
 
 type DictationStatus = 'idle' | 'permission' | 'recording' | 'processing' | 'error'
@@ -540,6 +540,12 @@ export function useDictationController(): DictationControllerState {
 
   const attemptStartRecording = useCallback(
     (origin: 'press-start' | 'permission-granted') => {
+      log('debug', 'attempting to start recording', {
+        origin,
+        hasPendingPress: Boolean(pendingPressRef.current),
+        waitingForPermission: waitingForPermissionRef.current,
+        recorderState: mediaRecorderRef.current?.state || 'inactive',
+      })
       if (!pendingPressRef.current) {
         log('debug', 'start recording skipped – no active press', { origin })
         return
@@ -578,10 +584,18 @@ export function useDictationController(): DictationControllerState {
           recorder.ondataavailable = evt => {
             if (evt.data && evt.data.size > 0) {
               bufferedChunksRef.current.push(evt.data)
+              log('debug', 'recorder data chunk buffered', {
+                chunkSize: evt.data.size,
+                totalChunks: bufferedChunksRef.current.length,
+              })
             }
           }
 
-          recorder.onstop = null
+          recorder.onstop = () => {
+            log('debug', 'media recorder stopped', {
+              bufferedChunks: bufferedChunksRef.current.length,
+            })
+          }
           recorder.onerror = eventError => {
             log('error', 'recorder error', { error: eventError })
             setState(prev => ({ ...prev, status: 'error', error: 'recorder error' }))
@@ -638,6 +652,10 @@ export function useDictationController(): DictationControllerState {
 
   const handlePermissionEvent = useCallback((event: DictationEvent) => {
     if (!event) return
+    log('debug', 'renderer received dictation permission event', {
+      type: event.type,
+      payload: event.payload,
+    })
     if (event.type === 'dictation:permission-required') {
       const payload = (event.payload ?? {}) as {
         requestId?: unknown
@@ -706,6 +724,10 @@ export function useDictationController(): DictationControllerState {
 
   const handleLifecycleEvent = useCallback((event: DictationEvent) => {
     if (!event) return
+    log('debug', 'renderer received dictation lifecycle event', {
+      type: event.type,
+      payload: event.payload,
+    })
     const payload = event.payload || {}
     switch (event.type) {
       case 'dictation:press-start':

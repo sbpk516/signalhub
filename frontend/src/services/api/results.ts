@@ -1,8 +1,8 @@
 import { apiClient } from './client'
-import type { 
-  PipelineResult, 
-  PipelineStatus, 
-  ApiResponse 
+import type {
+  PipelineResult,
+  PipelineStatus,
+  ApiResponse,
 } from '../../types/api'
 
 /**

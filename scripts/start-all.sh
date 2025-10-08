@@ -92,6 +92,10 @@ start_backend() {
     # Start backend in background
     cd backend
     source ../venv/bin/activate
+    SIGNALHUB_ENABLE_TRANSCRIPTION=1 \
+    SIGNALHUB_LIVE_TRANSCRIPTION=1 \
+    SIGNALHUB_LIVE_MIC=1 \
+    SIGNALHUB_LIVE_BATCH_ONLY=1 \
     python start.py &
     local backend_pid=$!
     cd ..

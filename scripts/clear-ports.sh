@@ -111,6 +111,8 @@ main() {
     # Clear common SignalHub ports (respect VPN usage on 8000 — do NOT clear 8000)
     kill_port_processes "8010" "legacy backend port"
     kill_port_processes "8001" "backend port"
+    kill_port_processes "8002" "secondary backend port"
+    kill_port_processes "8003" "secondary backend port"
     kill_port_processes "3001" "frontend port"
     kill_port_processes "3000" "alternative frontend port"
     

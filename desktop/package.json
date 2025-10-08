@@ -9,12 +9,16 @@
   "scripts": {
     "dev": "concurrently -k -n VITE,ELECTRON -c \"magenta,cyan\" \"npm --prefix ../frontend run dev\" \"wait-on tcp:127.0.0.1:3000 && electron .\"",
     "start": "electron .",
-    "pack": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder --dir -c electron-builder.yml",
+    "build:mac-key-server": "bash scripts/build-mac-key-server.sh",
+    "pack": "npm run build:mac-key-server && npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder --dir -c electron-builder.yml",
     "prepack:check": "bash ../scripts/check-prepack.sh",
-    "dist": "npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml",
+    "dist": "npm run build:mac-key-server && npm --prefix ../frontend run build:electron && npm run prepack:check && electron-builder -c electron-builder.yml",
     "test": "node --test"
   },
   "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "@nut-tree-fork/shared": "^4.2.6",
+    "node-global-key-listener": "^0.3.0",
     "semver": "^7.6.3"
   },
   "devDependencies": {

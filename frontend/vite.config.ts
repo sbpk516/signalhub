@@ -32,6 +32,11 @@ export default defineConfig({
           });
         },
       },
+      '/health': {
+        target: `http://127.0.0.1:${config.BACKEND_PORT}`,
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })

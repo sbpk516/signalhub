@@ -651,10 +651,19 @@ class DictationManager extends EventEmitter {
     }
 
     this._activeKeySet.add(keyCode)
+    this._log.debug('key down detected for dictation', {
+      keyCode,
+      activeKeys: Array.from(this._activeKeySet),
+      state: this._state,
+    })
 
     if (this._state === 'idle' && this._isShortcutSatisfied()) {
       this._pressStartedAt = now
       this._transitionState('pressed', { keyCode, rawEvent })
+      this._log.info('dictation shortcut satisfied – press started', {
+        timestamp: now,
+        keys: Array.from(this._activeKeySet),
+      })
       this._emitLifecycle('dictation:press-start', {
         timestamp: now,
         durationMs: 0,
@@ -684,12 +693,20 @@ class DictationManager extends EventEmitter {
 
     if (this._state === 'pressed') {
       this._transitionState('armed', { keyCode, rawEvent })
+      this._log.debug('dictation shortcut primary key released – armed state', {
+        keyCode,
+        remainingKeys: Array.from(this._activeKeySet),
+      })
     }
 
     if (this._activeKeySet.size === 0) {
       if (this._state === 'armed') {
         const duration = this._pressStartedAt ? now - this._pressStartedAt : 0
         this._transitionState('idle', { keyCode, rawEvent })
+        this._log.info('dictation shortcut released – ending press', {
+          timestamp: now,
+          durationMs: duration,
+        })
         this._emitLifecycle('dictation:press-end', {
           timestamp: now,
           durationMs: duration,
