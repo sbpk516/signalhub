@@ -740,18 +740,24 @@ export function useDictationController(): DictationControllerState {
         attemptStartRecording('press-start')
         break
       case 'dictation:press-end':
+        // Guard against duplicate press-end events
+        if (!mediaRecorderRef.current) {
+          log('warn', 'press-end received without active recorder (already processed or not started)')
+          break
+        }
+        
+        // Capture chunks BEFORE stopping recorder to avoid race condition
+        const capturedChunks = [...bufferedChunksRef.current]
+        const capturedMimeType = recorderMimeTypeRef.current
+        
         setState(prev => ({ ...prev, status: 'processing', error: null }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
-        if (!mediaRecorderRef.current) {
-          log('warn', 'press-end received without active recorder')
-          break
-        }
 
-        stopRecorder({ preserveBuffer: true })
+        stopRecorder({ preserveBuffer: false }) // Can clear now since we captured chunks
         log('debug', 'recording stopped', {
           event: 'press-end',
-          chunks: bufferedChunksRef.current.length,
+          chunks: capturedChunks.length,
         })
 
         const durationMs = typeof (payload as { durationMs?: unknown }).durationMs === 'number'
@@ -761,13 +767,11 @@ export function useDictationController(): DictationControllerState {
         void (async () => {
           try {
             const snippet = await buildSnippetPayload({
-              chunks: [...bufferedChunksRef.current],
-              mimeType: recorderMimeTypeRef.current || 'audio/webm',
+              chunks: capturedChunks, // Use captured chunks instead of ref
+              mimeType: capturedMimeType || 'audio/webm',
               durationMs,
             })
             pendingSnippetRef.current = snippet
-            bufferedChunksRef.current = []
-            recorderMimeTypeRef.current = null
             log('debug', 'snippet prepared for upload', {
               sizeBytes: snippet.sizeBytes,
               durationMs: snippet.durationMs,
@@ -775,8 +779,7 @@ export function useDictationController(): DictationControllerState {
             startSnippetUpload(snippet)
           } catch (error) {
             pendingSnippetRef.current = null
-            bufferedChunksRef.current = []
-            recorderMimeTypeRef.current = null
+            // Chunks already cleared by stopRecorder above
             const message = error instanceof Error ? error.message : 'unknown'
             const tooLarge = typeof message === 'string' && message.includes('exceeds maximum size')
             log('error', 'failed to prepare snippet payload', { error })
