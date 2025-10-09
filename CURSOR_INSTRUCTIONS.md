@@ -46,6 +46,7 @@
 
 ### **Step 4: Validate and Document**
 - Test the complete feature
+- **🔍 Perform mandatory self-review** (user can say "Review your work")
 - Update documentation
 - Provide clear instructions for future use
 
@@ -92,6 +93,7 @@
 
 ### **After Completion:**
 - [ ] Test the complete feature
+- [ ] **🔍 MANDATORY: Perform self-review** (see AI_REVIEW_PROTOCOL.md)
 - [ ] Update relevant documentation
 - [ ] Provide clear usage instructions
 - [ ] Suggest improvements to the process
@@ -159,6 +161,7 @@ psql -d signalhub -c "SELECT 1;"
 
 ### **Primary Guides:**
 - `DEVELOPMENT_GUIDELINES.md` - Core development principles
+- `docs/AI_REVIEW_PROTOCOL.md` - **Mandatory review process**
 - `FRONTEND_DEBUGGING_GUIDE.md` - Frontend-specific issues
 - `FRONTEND_QUICK_REFERENCE.md` - Quick frontend commands
 
