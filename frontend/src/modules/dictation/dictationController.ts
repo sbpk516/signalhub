@@ -594,7 +594,7 @@ export function useDictationController(): DictationControllerState {
           }
 
           recorder.onstop = () => {
-            log('debug', 'media recorder stopped', {
+            log('debug', 'media recorder stopped (onstop event)', {
               bufferedChunks: bufferedChunksRef.current.length,
             })
           }
@@ -748,73 +748,86 @@ export function useDictationController(): DictationControllerState {
           break
         }
         
-        // Capture chunks BEFORE stopping recorder to avoid race condition
-        const capturedChunks = [...bufferedChunksRef.current]
-        const capturedMimeType = recorderMimeTypeRef.current
-        
         setState(prev => ({ ...prev, status: 'processing', error: null }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
-
-        stopRecorder({ preserveBuffer: false }) // Can clear now since we captured chunks
-        log('debug', 'recording stopped', {
-          event: 'press-end',
-          chunks: capturedChunks.length,
-        })
 
         const durationMs = typeof (payload as { durationMs?: unknown }).durationMs === 'number'
           ? (payload as { durationMs: number }).durationMs
           : 0
 
-        void (async () => {
-          try {
-            // DIAGNOSTIC: Log chunk details before building snippet
-            log('debug', '[PHASE 5 DIAGNOSTIC] Building snippet from chunks', {
-              chunkCount: capturedChunks.length,
-              chunkSizes: capturedChunks.map(c => (c as Blob).size),
-              totalBytes: capturedChunks.reduce((sum, c) => sum + (c as Blob).size, 0),
-              mimeType: capturedMimeType,
-              durationMs,
-            })
-            
-            const snippet = await buildSnippetPayload({
-              chunks: capturedChunks, // Use captured chunks instead of ref
-              mimeType: capturedMimeType || 'audio/webm',
-              durationMs,
-            })
-            pendingSnippetRef.current = snippet
-            log('info', '[PHASE 5] snippet prepared for upload', {
-              sizeBytes: snippet.sizeBytes,
-              durationMs: snippet.durationMs,
-              requestId: snippet.requestId,
-            })
-            startSnippetUpload(snippet)
-          } catch (error) {
-            pendingSnippetRef.current = null
-            // Chunks already cleared by stopRecorder above
-            const message = error instanceof Error ? error.message : 'unknown'
-            const tooLarge = typeof message === 'string' && message.includes('exceeds maximum size')
-            log('error', '[PHASE 5 ERROR] failed to prepare snippet payload', { 
-              error,
-              chunkCount: capturedChunks.length,
-              errorMessage: message,
-            })
-            setState(prev => ({
-              ...prev,
-              status: 'error',
-              error: tooLarge ? 'failed to prepare audio snippet – too large' : 'failed to prepare audio snippet',
-            }))
-            const errorMessage = tooLarge
-              ? 'Dictation snippet exceeded the maximum size. Try a shorter recording.'
-              : 'We could not prepare the dictation audio snippet.'
-            pushNotification({
-              severity: 'error',
-              title: 'Dictation preparation failed',
-              message: errorMessage,
-            })
-            registerFatalError('snippet_prepare_failed', errorMessage, { countsTowardSafeMode: false })
-          }
-        })()
+        // FIX: Wait for recorder to flush final chunks before processing
+        const recorder = mediaRecorderRef.current
+        const capturedMimeType = recorderMimeTypeRef.current
+        
+        recorder.onstop = () => {
+          // Chunks are now fully flushed - capture them
+          const capturedChunks = [...bufferedChunksRef.current]
+          
+          log('debug', 'media recorder stopped (onstop event)', {
+            bufferedChunks: bufferedChunksRef.current.length,
+          })
+          
+          // Now clear the recorder
+          stopRecorder({ preserveBuffer: false })
+          
+          log('debug', 'recording stopped', {
+            event: 'press-end',
+            chunks: capturedChunks.length,
+          })
+
+          void (async () => {
+            try {
+              // DIAGNOSTIC: Log chunk details before building snippet
+              log('debug', '[PHASE 5 DIAGNOSTIC] Building snippet from chunks', {
+                chunkCount: capturedChunks.length,
+                chunkSizes: capturedChunks.map(c => (c as Blob).size),
+                totalBytes: capturedChunks.reduce((sum, c) => sum + (c as Blob).size, 0),
+                mimeType: capturedMimeType,
+                durationMs,
+              })
+              
+              const snippet = await buildSnippetPayload({
+                chunks: capturedChunks,
+                mimeType: capturedMimeType || 'audio/webm',
+                durationMs,
+              })
+              pendingSnippetRef.current = snippet
+              log('info', '[PHASE 5] snippet prepared for upload', {
+                sizeBytes: snippet.sizeBytes,
+                durationMs: snippet.durationMs,
+                requestId: snippet.requestId,
+              })
+              startSnippetUpload(snippet)
+            } catch (error) {
+              pendingSnippetRef.current = null
+              const message = error instanceof Error ? error.message : 'unknown'
+              const tooLarge = typeof message === 'string' && message.includes('exceeds maximum size')
+              log('error', '[PHASE 5 ERROR] failed to prepare snippet payload', { 
+                error,
+                chunkCount: capturedChunks.length,
+                errorMessage: message,
+              })
+              setState(prev => ({
+                ...prev,
+                status: 'error',
+                error: tooLarge ? 'failed to prepare audio snippet – too large' : 'failed to prepare audio snippet',
+              }))
+              const errorMessage = tooLarge
+                ? 'Dictation snippet exceeded the maximum size. Try a shorter recording.'
+                : 'We could not prepare the dictation audio snippet.'
+              pushNotification({
+                severity: 'error',
+                title: 'Dictation preparation failed',
+                message: errorMessage,
+              })
+              registerFatalError('snippet_prepare_failed', errorMessage, { countsTowardSafeMode: false })
+            }
+          })()
+        }
+        
+        // Stop the recorder - onstop handler above will process chunks
+        recorder.stop()
         break
       case 'dictation:press-cancel':
         setState(prev => ({ ...prev, status: 'idle', error: null }))
