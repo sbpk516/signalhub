@@ -726,5 +726,5 @@ class WhisperProcessor:
                 "error": str(e)
             }
 
-# Global Whisper processor instance (using tiny model for optimal speed with MPS acceleration)
-whisper_processor = WhisperProcessor(model_name="tiny")
+# Global Whisper processor instance (using base model with MPS acceleration)
+whisper_processor = WhisperProcessor(model_name="base")
