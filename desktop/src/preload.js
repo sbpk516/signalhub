@@ -56,7 +56,8 @@ ipcRenderer.on('dictation:lifecycle', (_event, eventData) => {
   
   dictationLifecycleListeners.forEach((listener) => {
     try {
-      listener(eventData)
+      // FIX: Transform event structure - frontend expects 'type' not 'event'
+      listener({ type: lifecycleEvent, payload: lifecyclePayload })
     } catch (error) {
       console.error('[Preload] dictation lifecycle listener failed', error)
     }
