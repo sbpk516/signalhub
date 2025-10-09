@@ -73,7 +73,13 @@ class WhisperProcessor:
         self.device = "cpu"
         if _WHISPER_AVAILABLE:
             try:
-                self.device = "cuda" if torch.cuda.is_available() else "cpu"  # type: ignore[attr-defined]
+                # Priority: Apple Silicon MPS > NVIDIA CUDA > CPU
+                if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    self.device = "mps"  # Apple Silicon GPU acceleration
+                elif torch.cuda.is_available():
+                    self.device = "cuda"  # NVIDIA GPU acceleration
+                else:
+                    self.device = "cpu"
             except Exception:
                 self.device = "cpu"
 
@@ -279,7 +285,7 @@ class WhisperProcessor:
                 options: Dict[str, Any] = {
                     "task": task,
                     "verbose": verbose,
-                    "fp16": False,                 # Better CPU compatibility
+                    "fp16": self.device in ["cuda", "mps"],  # Enable fp16 for GPU acceleration
                     "temperature": 0.0,            # Deterministic decoding
                     "condition_on_previous_text": False,
                     # Lower the speech/no-speech threshold a bit to avoid
@@ -720,5 +726,5 @@ class WhisperProcessor:
                 "error": str(e)
             }
 
-# Global Whisper processor instance (using base model for balance of speed/accuracy)
-whisper_processor = WhisperProcessor(model_name="base")
+# Global Whisper processor instance (using tiny model for optimal speed with MPS acceleration)
+whisper_processor = WhisperProcessor(model_name="tiny")
