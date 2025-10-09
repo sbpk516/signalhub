@@ -425,10 +425,11 @@ export function useDictationController(): DictationControllerState {
         error: null,
       }))
 
-      log('debug', 'dictation upload started', {
+      log('info', '[PHASE 5] dictation upload started', {
         requestId,
         sizeBytes: snippet.sizeBytes,
         durationMs: snippet.durationMs,
+        base64Length: snippet.base64Audio.length,
       })
 
       void submitDictationSnippetWithRetry(
@@ -459,9 +460,10 @@ export function useDictationController(): DictationControllerState {
       )
         .then(result => {
           if (result.ok) {
-            log('info', 'dictation upload succeeded', {
+            log('info', '[PHASE 5->6->7] dictation upload succeeded', {
               requestId,
               transcriptLength: result.transcript?.length ?? 0,
+              transcript: result.transcript,
             })
             const transcript = result.transcript ?? ''
             void insertDictationText(transcript).then(outcome => {
@@ -766,15 +768,25 @@ export function useDictationController(): DictationControllerState {
 
         void (async () => {
           try {
+            // DIAGNOSTIC: Log chunk details before building snippet
+            log('debug', '[PHASE 5 DIAGNOSTIC] Building snippet from chunks', {
+              chunkCount: capturedChunks.length,
+              chunkSizes: capturedChunks.map(c => (c as Blob).size),
+              totalBytes: capturedChunks.reduce((sum, c) => sum + (c as Blob).size, 0),
+              mimeType: capturedMimeType,
+              durationMs,
+            })
+            
             const snippet = await buildSnippetPayload({
               chunks: capturedChunks, // Use captured chunks instead of ref
               mimeType: capturedMimeType || 'audio/webm',
               durationMs,
             })
             pendingSnippetRef.current = snippet
-            log('debug', 'snippet prepared for upload', {
+            log('info', '[PHASE 5] snippet prepared for upload', {
               sizeBytes: snippet.sizeBytes,
               durationMs: snippet.durationMs,
+              requestId: snippet.requestId,
             })
             startSnippetUpload(snippet)
           } catch (error) {
@@ -782,7 +794,11 @@ export function useDictationController(): DictationControllerState {
             // Chunks already cleared by stopRecorder above
             const message = error instanceof Error ? error.message : 'unknown'
             const tooLarge = typeof message === 'string' && message.includes('exceeds maximum size')
-            log('error', 'failed to prepare snippet payload', { error })
+            log('error', '[PHASE 5 ERROR] failed to prepare snippet payload', { 
+              error,
+              chunkCount: capturedChunks.length,
+              errorMessage: message,
+            })
             setState(prev => ({
               ...prev,
               status: 'error',
