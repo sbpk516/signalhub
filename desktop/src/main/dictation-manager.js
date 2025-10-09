@@ -294,8 +294,22 @@ class DictationManager extends EventEmitter {
       if (!event || !event.state) {
         return
       }
+      
+      // DEBUG: Log ALL raw events to diagnose Option key issue
+      const rawName = event.name || (event.rawKey && event.rawKey.name) || 'unknown'
+      this._log.debug('[DEBUG] raw key event received', {
+        state: event.state,
+        name: event.name,
+        rawKeyName: event.rawKey && event.rawKey.name,
+        vKey: event.vKey,
+      })
+      
       const keyCode = this._mapListenerEventToKey(event)
       if (keyCode === null || keyCode === undefined) {
+        this._log.debug('[DEBUG] key mapping returned null', {
+          rawName,
+          state: event.state,
+        })
         return
       }
 

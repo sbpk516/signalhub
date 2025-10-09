@@ -14,6 +14,13 @@ let latestLifecycleEvent = null
 let latestPermissionRequest = null
 
 ipcRenderer.on('dictation:lifecycle', (_event, eventData) => {
+  // DEBUG: Log all lifecycle events
+  console.log('[Preload DEBUG] dictation:lifecycle received', {
+    event: eventData?.event,
+    hasPayload: !!eventData?.payload,
+    listenerCount: dictationLifecycleListeners.size,
+  })
+  
   latestLifecycleEvent = eventData
   const lifecycleEvent = eventData && eventData.event
   const lifecyclePayload = eventData && eventData.payload
@@ -41,9 +48,16 @@ ipcRenderer.on('dictation:lifecycle', (_event, eventData) => {
       }
     })
   }
+  // DEBUG: Broadcast to all lifecycle listeners
+  console.log('[Preload DEBUG] Broadcasting to lifecycle listeners', {
+    listenerCount: dictationLifecycleListeners.size,
+    event: eventData?.event,
+  })
+  
   dictationLifecycleListeners.forEach((listener) => {
     try {
-      listener(eventData)
+      // FIX: Transform event structure - frontend expects 'type' not 'event'
+      listener({ type: lifecycleEvent, payload: lifecyclePayload })
     } catch (error) {
       console.error('[Preload] dictation lifecycle listener failed', error)
     }
@@ -166,15 +180,22 @@ contextBridge.exposeInMainWorld('signalhubDictation', {
       console.warn('[Preload] onLifecycle expects a function callback')
       return () => {}
     }
+    console.log('[Preload DEBUG] onLifecycle: registering listener', {
+      listenerCount: dictationLifecycleListeners.size + 1,
+    })
     dictationLifecycleListeners.add(callback)
     if (latestLifecycleEvent) {
       try {
+        console.log('[Preload DEBUG] Calling new listener with cached event', latestLifecycleEvent?.event)
         callback(latestLifecycleEvent)
       } catch (error) {
         console.error('[Preload] immediate lifecycle callback failed', error)
       }
     }
-    return () => dictationLifecycleListeners.delete(callback)
+    return () => {
+      console.log('[Preload DEBUG] onLifecycle: unregistering listener')
+      dictationLifecycleListeners.delete(callback)
+    }
   },
   getLatestLifecycle() {
     return latestLifecycleEvent

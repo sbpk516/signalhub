@@ -44,13 +44,17 @@ class DictationResponse(BaseModel):
 async def transcribe_snippet(request: DictationSnippet) -> DictationResponse:
     """Transcribe an audio snippet and return the text + metadata."""
 
-    if request.media_type and request.media_type.lower() not in ALLOWED_MEDIA_TYPES:
-        raise HTTPException(status_code=400, detail="Unsupported media_type")
+    # Normalize media_type by stripping codec info (e.g., "audio/webm;codecs=opus" -> "audio/webm")
+    normalized_media_type = request.media_type
+    if normalized_media_type:
+        normalized_media_type = normalized_media_type.split(';')[0].strip().lower()
+        if normalized_media_type not in ALLOWED_MEDIA_TYPES:
+            raise HTTPException(status_code=400, detail="Unsupported media_type")
 
     try:
         result = whisper_processor.transcribe_snippet_from_base64(
             request.audio_base64,
-            media_type=request.media_type or "audio/wav",
+            media_type=normalized_media_type or "audio/wav",
             sample_rate=request.sample_rate,
             max_duration_ms=MAX_SNIPPET_DURATION_MS,
         )
