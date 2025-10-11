@@ -4,8 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..whisper_processor import whisper_processor
+from ..whisper_backend_selector import get_global_whisper_processor
 from pydantic import BaseModel, Field
+
+# Get the appropriate Whisper processor (PyTorch or MLX)
+whisper_processor = get_global_whisper_processor()
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 

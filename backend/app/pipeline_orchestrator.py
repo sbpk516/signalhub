@@ -16,7 +16,7 @@ from fastapi import UploadFile
 from .config import settings, is_live_transcription_enabled, is_live_batch_only
 from .upload import AudioUploadHandler
 from .audio_processor import AudioProcessor
-from .whisper_processor import WhisperProcessor
+from .whisper_backend_selector import get_global_whisper_processor
 from .live_events import event_bus
 from .db_integration import DatabaseIntegration
 from .nlp_processor import nlp_processor
@@ -233,7 +233,7 @@ class AudioProcessingPipeline:
         # Initialize all components
         self.upload_handler = AudioUploadHandler()
         self.audio_processor = AudioProcessor()
-        self.whisper_processor = WhisperProcessor()
+        self.whisper_processor = get_global_whisper_processor()  # Use backend selector for MLX/PyTorch
         self.db_integration = DatabaseIntegration()
         
         # Initialize tracking and debugging

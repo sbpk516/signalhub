@@ -184,6 +184,7 @@ function dataDir() {
 async function startBackendDev() {
   const port = await findPort()
   backendInfo.port = port
+  const mlxVenvDev = path.resolve(__dirname, '..', '..', 'venv_mlx')
   const env = { 
     ...process.env, 
     PATH: withBrewPath(process.env.PATH), 
@@ -195,6 +196,9 @@ async function startBackendDev() {
     SIGNALHUB_LIVE_MIC: '1',
     // Batch-only live mic to ensure full transcript at stop()
     SIGNALHUB_LIVE_BATCH_ONLY: '1',
+    // Enable MLX-accelerated Whisper (3.25x faster on Apple Silicon)
+    SIGNALHUB_USE_MLX: '1',
+    SIGNALHUB_MLX_VENV: mlxVenvDev,
   }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
@@ -218,6 +222,7 @@ async function startBackendDev() {
 async function startBackendProd() {
   const port = await findPort()
   backendInfo.port = port
+  const resourcesVenv = path.join(process.resourcesPath, 'venv_mlx')
   const env = { 
     ...process.env, 
     PATH: withBrewPath(process.env.PATH), 
@@ -231,6 +236,9 @@ async function startBackendProd() {
     SIGNALHUB_LIVE_BATCH_ONLY: '1',
     // Ensure Whisper uses bundled cache for offline models
     XDG_CACHE_HOME: path.join(process.resourcesPath, 'whisper_cache'),
+    // Enable MLX-accelerated Whisper (3.25x faster on Apple Silicon)
+    SIGNALHUB_USE_MLX: '1',
+    SIGNALHUB_MLX_VENV: resourcesVenv,
   }
   const binName = process.platform === 'win32' ? 'signalhub-backend.exe' : 'signalhub-backend'
   const binPath = path.join(process.resourcesPath, 'backend', binName)

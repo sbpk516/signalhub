@@ -16,6 +16,12 @@ import uvicorn
 APP_IMPORT_ERROR = None
 app = None  # type: ignore
 
+try:
+    from app.mlx_runtime import activate_mlx_site_packages, get_mlx_venv_root
+except Exception:  # pragma: no cover
+    activate_mlx_site_packages = None  # type: ignore
+    get_mlx_venv_root = None  # type: ignore
+
 
 def getenv_int(name: str, default: int) -> int:
     try:
@@ -48,8 +54,24 @@ def main() -> int:
     global app
     if app is None:
         try:
+            print("📦 Importing FastAPI app...")
+            import sys
+            sys.stdout.flush()
+
+            if activate_mlx_site_packages:
+                try:
+                    if activate_mlx_site_packages(reason="desktop_entry"):
+                        if get_mlx_venv_root:
+                            print(f"🧠 MLX venv detected at: {get_mlx_venv_root()}")
+                    else:
+                        print("ℹ️  MLX venv not available, continuing without MLX")
+                except Exception as runtime_err:
+                    print(f"⚠️  Failed to activate MLX venv: {runtime_err}")
+
             from app.main import app as _app  # type: ignore
             app = _app
+            print("✅ FastAPI app imported successfully")
+            sys.stdout.flush()
         except Exception as e:
             # Also write error to logs if possible
             err = f"Failed to import FastAPI app: {e}"
@@ -63,7 +85,10 @@ def main() -> int:
             return 1
 
     print(f"🚀 Starting bundled backend on http://{host}:{port}")
+    sys.stdout.flush()
     try:
+        print("🔧 Calling uvicorn.run()...")
+        sys.stdout.flush()
         uvicorn.run(app, host=host, port=port, log_level="info")
         return 0
     except Exception as e:

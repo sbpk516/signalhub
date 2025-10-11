@@ -27,8 +27,11 @@ from .db_integration import db_integration
 from .live_events import event_bus, sse_format
 from .live_mic import live_sessions
 from .audio_processor import audio_processor
-from .whisper_processor import whisper_processor
+from .whisper_backend_selector import get_global_whisper_processor
 from .api import dictation_router
+
+# Get the global whisper processor (MLX or PyTorch based on environment)
+whisper_processor = get_global_whisper_processor()
 
 _MODULE_IMPORT_STARTED = time.perf_counter()
 _warmup_task: Optional[asyncio.Task] = None

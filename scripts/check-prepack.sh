@@ -32,6 +32,20 @@ else
   ok "Backend binary present"
 fi
 
+# 2b) MLX virtual environment present and healthy
+MLX_VENV="$ROOT_DIR/venv_mlx"
+if [[ ! -d "$MLX_VENV" ]]; then
+  fail "venv_mlx directory not found. Run: bash scripts/build-mlx-venv.sh (Apple Silicon only)"
+fi
+if [[ ! -x "$MLX_VENV/bin/python" ]]; then
+  fail "venv_mlx/bin/python missing. Recreate MLX venv: bash scripts/build-mlx-venv.sh"
+fi
+if ! "$MLX_VENV/bin/python" -c "import mlx, mlx_whisper" >/dev/null 2>&1; then
+  fail "venv_mlx is missing mlx packages. Recreate with: bash scripts/build-mlx-venv.sh"
+else
+  ok "MLX virtual environment ready (imports mlx, mlx_whisper)"
+fi
+
 # 3) Whisper model present for offline transcription
 if ! ls "$ROOT_DIR"/backend/whisper_cache/whisper/*.pt >/dev/null 2>&1; then
   fail "No Whisper model found under backend/whisper_cache/whisper/*.pt. Place base.pt or tiny.pt there."
