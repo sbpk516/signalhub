@@ -1,4 +1,7 @@
 const EventEmitter = require('events')
+const { clipboard } = require('electron')
+
+let clipboardTipLogged = false
 
 const { createGlobalKeyListenerFactory } = require('./global-key-listener')
 
@@ -71,26 +74,68 @@ class DictationManager extends EventEmitter {
     this._stuckKeyTimer = null
   }
 
-  async typeText(text) {
-    if (!text || typeof text !== 'string') {
+  async typeText(payload = {}) {
+    let text = ''
+    let mode = 'type'
+
+    if (typeof payload === 'string') {
+      text = payload
+    } else if (payload && typeof payload === 'object') {
+      if (typeof payload.text === 'string') {
+        text = payload.text
+      }
+      if (typeof payload.mode === 'string') {
+        mode = payload.mode
+      }
+    }
+
+    if (!text) {
       this._log.warn('typeText invoked without text')
       return { ok: false, reason: 'empty_text' }
     }
 
     try {
-      if (!this._nut) {
-        // eslint-disable-next-line global-require
-        this._nut = require('@nut-tree-fork/nut-js')
-        this._keyboard = this._nut.keyboard
-        this._log.info('nut-js loaded for dictation typing')
+      this._log.debug('typeText requested', { text, length: text.length, mode })
+
+      if (mode === 'paste') {
+        const pasteResult = await this._attemptAutoPaste(text)
+        if (pasteResult.ok) {
+          return pasteResult
+        }
+        this._log.warn('typeText auto-paste fallback to typing', {
+          reason: pasteResult.reason || 'unknown',
+        })
       }
-      if (!this._keyboard || typeof this._keyboard.type !== 'function') {
+
+      if (process.env.SIGNALHUB_DICTATION_USE_CLIPBOARD === '1' && mode !== 'paste') {
+        if (!clipboardTipLogged) {
+          clipboardTipLogged = true
+          this._log.info('dictation clipboard fallback enabled', {
+            instructions: [
+              'Focus the target app',
+              'Run dictation so text copies to clipboard',
+              'Press Cmd+V (or Ctrl+V on Windows/Linux) to paste the transcript',
+            ],
+          })
+        }
+        try {
+          clipboard.writeText(text)
+          this._log.info('typeText clipboard fallback', { length: text.length })
+          return { ok: true, method: 'clipboard' }
+        } catch (clipboardError) {
+          this._log.warn('typeText clipboard fallback failed, retrying with keyboard', {
+            error: clipboardError.message,
+          })
+        }
+      }
+
+      if (!this._ensureKeyboardReady('typing') || !this._keyboard || typeof this._keyboard.type !== 'function') {
         this._log.error('typeText missing keyboard type function')
         return { ok: false, reason: 'keyboard_unavailable' }
       }
       await this._keyboard.type(text)
       this._log.info('typeText completed', { length: text.length })
-      return { ok: true }
+      return { ok: true, method: 'keyboard' }
     } catch (error) {
       this._log.error('typeText failed', { error: error.message })
       return { ok: false, reason: 'exception', error: error.message }
@@ -118,6 +163,12 @@ class DictationManager extends EventEmitter {
         this._log.error('failed to load @nut-tree-fork/nut-js', { error: error.message })
         return
       }
+    }
+    if (!this._keyboard && this._nut && this._nut.keyboard) {
+      this._keyboard = this._nut.keyboard
+    }
+    if (this._keyboard) {
+      this._configureKeyboardDelay(0)
     }
 
     if (!this._listenerFactory) {
@@ -209,6 +260,123 @@ class DictationManager extends EventEmitter {
     this._log.info('cancelActivePress invoked', { reason, details })
     this._cancelPress(reason, { source: 'renderer', ...details })
     return true
+  }
+
+  _configureKeyboardDelay(delayMs = 0) {
+    if (!this._keyboard) {
+      return
+    }
+
+    if (this._keyboard.config && typeof this._keyboard.config === 'object') {
+      this._keyboard.config.autoDelayMs = delayMs
+    }
+
+    try {
+      const registry = this._keyboard.providerRegistry
+      if (registry && typeof registry.hasKeyboard === 'function' && registry.hasKeyboard()) {
+        const provider = registry.getKeyboard?.()
+        if (provider && typeof provider.setKeyboardDelay === 'function') {
+          provider.setKeyboardDelay(delayMs)
+          this._log.debug('dictation keyboard delay configured', { delayMs })
+        }
+      }
+    } catch (error) {
+      this._log.warn('failed to configure keyboard delay', { error: error.message })
+    }
+  }
+
+  _ensureKeyboardReady(context = 'typing') {
+    if (!this._nut) {
+      try {
+        // eslint-disable-next-line global-require
+        this._nut = require('@nut-tree-fork/nut-js')
+        this._keyboard = this._nut.keyboard
+        this._log.info(`nut-js loaded for dictation ${context}`)
+      } catch (error) {
+        this._log.error('failed to load @nut-tree-fork/nut-js', { context, error: error.message })
+        return false
+      }
+    }
+    if (!this._keyboard && this._nut && this._nut.keyboard) {
+      this._keyboard = this._nut.keyboard
+    }
+    if (this._keyboard) {
+      this._configureKeyboardDelay(0)
+    }
+    return !!this._keyboard
+  }
+
+  async _attemptAutoPaste(text) {
+    if (!this._ensureKeyboardReady('auto_paste') || !this._keyboard || !this._nut) {
+      return { ok: false, reason: 'keyboard_unavailable' }
+    }
+
+    const { Key } = this._nut
+    if (!Key || Key.V === undefined) {
+      return { ok: false, reason: 'key_mapping_unavailable' }
+    }
+
+    const isMac = process.platform === 'darwin'
+    const modifier =
+      (isMac && (Key.LeftCmd ?? Key.LeftSuper ?? Key.LeftMeta)) ??
+      Key.LeftControl ??
+      Key.LeftCtrl ??
+      Key.LeftMeta
+
+    if (modifier === undefined) {
+      return { ok: false, reason: 'modifier_unavailable' }
+    }
+
+    let originalClipboard = ''
+    let capturedOriginal = false
+    let clipboardTouched = false
+
+    try {
+      originalClipboard = clipboard.readText()
+      capturedOriginal = true
+    } catch (error) {
+      this._log.warn('auto-paste clipboard read failed', { error: error.message })
+    }
+
+    try {
+      clipboard.writeText(text)
+      clipboardTouched = true
+    } catch (error) {
+      return {
+        ok: false,
+        reason: 'clipboard_write_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+
+    const restoreClipboard = () => {
+      if (!clipboardTouched) {
+        return
+      }
+      try {
+        if (capturedOriginal) {
+          clipboard.writeText(originalClipboard)
+        } else {
+          clipboard.clear()
+        }
+      } catch (restoreError) {
+        this._log.warn('auto-paste clipboard restore failed', {
+          error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+        })
+      }
+    }
+
+    try {
+      await this._keyboard.type(modifier, Key.V)
+      await new Promise(resolve => setTimeout(resolve, 50))
+      restoreClipboard()
+      this._log.info('typeText auto-paste completed', { length: text.length })
+      return { ok: true, method: 'paste' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      restoreClipboard()
+      return { ok: false, reason: 'paste_failed', error: message }
+    }
   }
 
   async updateShortcut(patch = {}) {

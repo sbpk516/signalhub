@@ -5,7 +5,13 @@ import {
   submitDictationSnippetWithRetry,
 } from './dictationService'
 import type { DictationSnippetPayload } from './dictationService'
-import { insertDictationText } from './textInsertion'
+import {
+  insertDictationText,
+  snapshotActiveEditable,
+  type EditableTargetSnapshot,
+} from './textInsertion'
+
+let dictationDebugInstructionsLogged = false
 
 type DictationStatus = 'idle' | 'permission' | 'recording' | 'processing' | 'error'
 
@@ -103,6 +109,7 @@ export function useDictationController(): DictationControllerState {
   const pendingSnippetRef = useRef<DictationSnippetPayload | null>(null)
   const activeUploadAbortRef = useRef<AbortController | null>(null)
   const pendingPressRef = useRef<DictationEvent['payload'] | null>(null)
+  const releaseTargetRef = useRef<EditableTargetSnapshot | null>(null)
   const waitingForPermissionRef = useRef(false)
   const recordingStartInFlightRef = useRef(false)
   const notificationTimersRef = useRef<Map<string, number>>(new Map())
@@ -125,6 +132,30 @@ export function useDictationController(): DictationControllerState {
     }
     logger('[DictationController]', message)
   }, [])
+
+  const requestAutoPaste = useCallback((text: string) => {
+    if (!text) {
+      return
+    }
+    if (!dictationBridge || typeof dictationBridge.typeText !== 'function') {
+      log('debug', 'dictation auto paste skipped – bridge unavailable')
+      return
+    }
+    log('debug', 'dictation auto paste requested', { length: text.length })
+    void dictationBridge
+      .typeText({ text, mode: 'paste' })
+      .then(result => {
+        const ok = Boolean(result?.ok)
+        log(ok ? 'debug' : 'warn', 'dictation auto paste result', {
+          ok,
+          method: result?.method ?? null,
+        })
+      })
+      .catch(error => {
+        const message = error instanceof Error ? error.message : String(error)
+        log('error', 'dictation auto paste failed', { error: message })
+      })
+  }, [dictationBridge, log])
 
   const clearWatchdogTimer = useCallback(() => {
     if (watchdogTimerRef.current !== null) {
@@ -466,9 +497,37 @@ export function useDictationController(): DictationControllerState {
               transcript: result.transcript,
             })
             const transcript = result.transcript ?? ''
-            void insertDictationText(transcript).then(outcome => {
+            if (!dictationDebugInstructionsLogged) {
+              dictationDebugInstructionsLogged = true
+              log('info', 'dictation debug tips', {
+                steps: [
+                  'Open DevTools console to see "dictation transcript received"',
+                  'Check desktop log for "typeText requested" to compare strings',
+                  'Set SIGNALHUB_DICTATION_USE_CLIPBOARD=1 to test clipboard fallback',
+                ],
+              })
+            }
+            log('debug', 'dictation transcript received', { transcript })
+            const expectedTarget = releaseTargetRef.current ?? null
+            void insertDictationText(transcript, {
+              expectedTarget,
+              allowBridge: false,
+              allowClipboard: false,
+            }).then(outcome => {
               log('debug', 'dictation text inserted', outcome)
+              if (outcome.ok) {
+                return
+              }
+              if (!outcome.ok && outcome.reason === 'target_mismatch') {
+                log('info', 'dictation insertion skipped – target changed before insert')
+              }
+              if (outcome.reason === 'target_mismatch' || outcome.reason === 'no_target') {
+                requestAutoPaste(transcript)
+              } else {
+                log('debug', 'dictation auto paste skipped – reason not eligible', { reason: outcome.reason })
+              }
             })
+            releaseTargetRef.current = null
             setState(prev => ({
               ...prev,
               status: 'idle',
@@ -668,6 +727,7 @@ export function useDictationController(): DictationControllerState {
       const accessibilityOk = payload.accessibilityOk !== false
       const micOk = payload.micOk !== false
       waitingForPermissionRef.current = true
+      releaseTargetRef.current = null
       setState(prev => ({
         ...prev,
         status: 'permission',
@@ -690,6 +750,7 @@ export function useDictationController(): DictationControllerState {
     if (event.type === 'dictation:permission-denied') {
       waitingForPermissionRef.current = false
       pendingPressRef.current = null
+      releaseTargetRef.current = null
       setState(prev => ({
         ...prev,
         status: 'error',
@@ -707,6 +768,7 @@ export function useDictationController(): DictationControllerState {
       if (!pendingPressRef.current) {
         log('debug', 'permission granted with no active press; returning to idle')
         setState(prev => ({ ...prev, status: 'idle', error: null, permission: null }))
+        releaseTargetRef.current = null
         return
       }
       setState(prev => ({
@@ -720,6 +782,7 @@ export function useDictationController(): DictationControllerState {
     if (event.type === 'dictation:permission-cleared') {
       waitingForPermissionRef.current = false
       pendingPressRef.current = null
+      releaseTargetRef.current = null
       setState(prev => ({ ...prev, permission: null }))
     }
   }, [attemptStartRecording, pushNotification])
@@ -735,6 +798,7 @@ export function useDictationController(): DictationControllerState {
       case 'dictation:press-start':
         pendingPressRef.current = payload
         waitingForPermissionRef.current = true
+        releaseTargetRef.current = null
         setState(prev => ({ ...prev, status: 'recording', error: null }))
         if (safeMode.engaged) {
           resetSafeModeState()
@@ -747,7 +811,9 @@ export function useDictationController(): DictationControllerState {
           log('warn', 'press-end received without active recorder (already processed or not started)')
           break
         }
-        
+
+        releaseTargetRef.current = snapshotActiveEditable()
+
         setState(prev => ({ ...prev, status: 'processing', error: null }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
@@ -833,6 +899,7 @@ export function useDictationController(): DictationControllerState {
         setState(prev => ({ ...prev, status: 'idle', error: null }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
+        releaseTargetRef.current = null
         if (payload && typeof (payload as { reason?: unknown }).reason === 'string') {
           const reason = (payload as { reason: string }).reason
           if (reason === 'stuck_key_timeout') {
@@ -861,11 +928,13 @@ export function useDictationController(): DictationControllerState {
         }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
+        releaseTargetRef.current = null
         break
       case 'dictation:listener-fallback':
         setState(prev => ({ ...prev, status: 'error', error: 'dictation listener unavailable' }))
         waitingForPermissionRef.current = false
         pendingPressRef.current = null
+        releaseTargetRef.current = null
         pushNotification({
           severity: 'error',
           title: 'Dictation listener unavailable',
