@@ -821,7 +821,7 @@ class DictationManager extends EventEmitter {
 
   _handleKeydown(keyCode, rawEvent = {}) {
     const now = Date.now()
-    if (this._shouldIgnoreEvent(now)) {
+    if (this._shouldIgnoreEvent(now, rawEvent.state)) {
       return
     }
 
@@ -863,7 +863,7 @@ class DictationManager extends EventEmitter {
 
   _handleKeyup(keyCode, rawEvent = {}) {
     const now = Date.now()
-    if (this._shouldIgnoreEvent(now)) {
+    if (this._shouldIgnoreEvent(now, rawEvent.state)) {
       return
     }
 
@@ -962,7 +962,10 @@ class DictationManager extends EventEmitter {
     this._log.debug('state transition', { previous, next, ...meta })
   }
 
-  _shouldIgnoreEvent(now = Date.now()) {
+  _shouldIgnoreEvent(now = Date.now(), state = null) {
+    if (state === 'UP') {
+      return false
+    }
     const diff = now - this._lastEventTs
     if (diff >= 0 && diff < 10) {
       this._log.debug('debounce: ignoring event', { diff })
