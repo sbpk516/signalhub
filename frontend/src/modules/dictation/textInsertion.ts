@@ -1,6 +1,56 @@
 export type TextInsertionOutcome =
   | { ok: true; method: 'input' | 'contenteditable' | 'bridge' | 'clipboard' }
-  | { ok: false; reason: 'no_target' | 'bridge_failed' | 'clipboard_failed' }
+  | { ok: false; reason: 'no_target' | 'target_mismatch' | 'bridge_failed' | 'clipboard_failed' }
+
+export type EditableTargetSnapshot =
+  | {
+      element: HTMLInputElement | HTMLTextAreaElement
+      kind: 'input'
+    }
+  | {
+      element: HTMLElement
+      kind: 'contenteditable'
+    }
+
+export interface InsertDictationOptions {
+  expectedTarget?: EditableTargetSnapshot | null
+  allowBridge?: boolean
+  allowClipboard?: boolean
+}
+
+type TextInsertionFailureReason = Extract<TextInsertionOutcome, { ok: false }>['reason']
+
+function classifyActiveElement(active: HTMLElement | null): EditableTargetSnapshot | null {
+  if (!active) {
+    return null
+  }
+
+  const tagName = typeof (active as { tagName?: unknown }).tagName === 'string'
+    ? ((active as { tagName: string }).tagName || '').toUpperCase()
+    : ''
+
+  if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+    const input = active as HTMLInputElement | HTMLTextAreaElement
+    if (input.readOnly || input.disabled) {
+      return null
+    }
+    return { element: input, kind: 'input' }
+  }
+
+  if (active.isContentEditable) {
+    return { element: active, kind: 'contenteditable' }
+  }
+
+  return null
+}
+
+export function snapshotActiveEditable(): EditableTargetSnapshot | null {
+  if (typeof document === 'undefined') {
+    return null
+  }
+  const active = document.activeElement as HTMLElement | null
+  return classifyActiveElement(active)
+}
 
 function insertIntoInput(element: HTMLInputElement | HTMLTextAreaElement, text: string): boolean {
   const start = element.selectionStart ?? element.value.length
@@ -28,48 +78,71 @@ async function attemptClipboard(text: string): Promise<boolean> {
   return false
 }
 
-export async function insertDictationText(text: string): Promise<TextInsertionOutcome> {
+export async function insertDictationText(
+  text: string,
+  options: InsertDictationOptions = {},
+): Promise<TextInsertionOutcome> {
   if (!text) {
     return { ok: false, reason: 'no_target' }
   }
 
-  const active = (typeof document !== 'undefined') ? (document.activeElement as HTMLElement | null) : null
+  const expectedTargetProvided = Object.prototype.hasOwnProperty.call(options, 'expectedTarget')
+  const expectedTarget = options.expectedTarget
+  const allowBridge = options.allowBridge !== false
+  const allowClipboard = options.allowClipboard !== false
 
-  if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
-    const input = active as HTMLInputElement | HTMLTextAreaElement
-    if (!input.readOnly && !input.disabled) {
-      insertIntoInput(input, text)
+  const activeSnapshot = snapshotActiveEditable()
+  let lastFailureReason: TextInsertionFailureReason = 'no_target'
+
+  if (expectedTargetProvided) {
+    if (!expectedTarget) {
+      return { ok: false, reason: 'target_mismatch' }
+    }
+    if (!activeSnapshot || activeSnapshot.element !== expectedTarget.element) {
+      return { ok: false, reason: 'target_mismatch' }
+    }
+  }
+
+  if (activeSnapshot) {
+    if (activeSnapshot.kind === 'input') {
+      insertIntoInput(activeSnapshot.element, text)
       return { ok: true, method: 'input' }
     }
-  }
-
-  if (active && active.isContentEditable) {
-    if (insertIntoContentEditable(active, text)) {
-      return { ok: true, method: 'contenteditable' }
+    if (activeSnapshot.kind === 'contenteditable') {
+      if (insertIntoContentEditable(activeSnapshot.element, text)) {
+        return { ok: true, method: 'contenteditable' }
+      }
     }
   }
 
-  const bridge = (window as unknown as { signalhubDictation?: any })?.signalhubDictation
-  if (bridge && typeof bridge.typeText === 'function') {
+  if (allowBridge) {
+    const bridge = (window as unknown as { signalhubDictation?: any })?.signalhubDictation
+    if (bridge && typeof bridge.typeText === 'function') {
+      try {
+        const result = await bridge.typeText({ text })
+        if (result?.ok) {
+          return { ok: true, method: 'bridge' }
+        }
+        lastFailureReason = 'bridge_failed'
+      } catch (error) {
+        console.warn('[Dictation] bridge typeText failed', error)
+        lastFailureReason = 'bridge_failed'
+      }
+    }
+  }
+
+  if (allowClipboard) {
+    lastFailureReason = 'clipboard_failed'
     try {
-      const result = await bridge.typeText({ text })
-      if (result?.ok) {
-        return { ok: true, method: 'bridge' }
+      const success = await attemptClipboard(text)
+      if (success) {
+        return { ok: true, method: 'clipboard' }
       }
     } catch (error) {
-      console.warn('[Dictation] bridge typeText failed', error)
+      console.warn('[Dictation] clipboard fallback failed', error)
+      return { ok: false, reason: 'clipboard_failed' }
     }
   }
 
-  try {
-    const success = await attemptClipboard(text)
-    if (success) {
-      return { ok: true, method: 'clipboard' }
-    }
-  } catch (error) {
-    console.warn('[Dictation] clipboard fallback failed', error)
-    return { ok: false, reason: 'clipboard_failed' }
-  }
-
-  return { ok: false, reason: 'bridge_failed' }
+  return { ok: false, reason: lastFailureReason }
 }

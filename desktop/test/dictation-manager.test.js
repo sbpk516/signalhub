@@ -144,9 +144,29 @@ test("DictationManager cancels when permission denied", async () => {
    manager._nut = stubNut
    manager._keyboard = stubNut.keyboard
 
-   const result = await manager.typeText('hello world')
-   assert.deepEqual(result, { ok: true })
- })
+  const result = await manager.typeText('hello world')
+  assert.equal(result.ok, true)
+  assert.equal(result.method, 'keyboard')
+})
+
+test("DictationManager typeText supports object payload", async () => {
+  const state = {
+    handlers: new Set(),
+    added: [],
+    removed: [],
+    instances: [],
+    killed: false,
+  }
+  const manager = new DictationManager({ listenerFactory: createStubFactory(state) })
+  const stubNut = createStubNut()
+  stubNut.keyboard.type = async () => {}
+  manager._nut = stubNut
+  manager._keyboard = stubNut.keyboard
+
+  const result = await manager.typeText({ text: 'object payload', mode: 'type' })
+  assert.equal(result.ok, true)
+  assert.equal(result.method, 'keyboard')
+})
 
 test("DictationManager typeText handles empty text", async () => {
   const manager = new DictationManager()

@@ -588,7 +588,7 @@ ipcMain.handle('dictation:type-text', async (_event, payload = {}) => {
     if (!payload || typeof payload.text !== 'string') {
       return { ok: false, message: 'invalid_text' }
     }
-    return await manager.typeText(payload.text)
+    return await manager.typeText(payload)
   } catch (error) {
     logLine('dictation_type_text_error', error.message)
     return { ok: false, message: error.message }
