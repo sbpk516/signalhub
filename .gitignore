@@ -237,3 +237,4 @@ docs/journal/
 !docs/project-rules.md
 !docs/prompt-pack/
 !docs/prompt-pack/*.md
+venv_mlx/

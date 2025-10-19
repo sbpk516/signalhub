@@ -16,6 +16,7 @@
   },
   "include": [
     "test/**/*.ts",
+    "test/node-stubs.d.ts",
     "src/modules/dictation/snippetPayload.ts",
     "src/pages/SettingsValidation.ts"
   ]

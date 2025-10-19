@@ -14,6 +14,9 @@ extraResources:
   # Include prebuilt backend binaries (place binaries under backend/bin before packaging)
   - from: ../backend/bin
     to: backend
+  # Include MLX virtual environment (Option A packaging)
+  - from: ../venv_mlx
+    to: venv_mlx
   # Include Whisper model cache for offline transcription
   - from: ../backend/whisper_cache
     to: whisper_cache

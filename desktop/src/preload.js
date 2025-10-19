@@ -251,4 +251,16 @@ contextBridge.exposeInMainWorld('signalhubDictation', {
       throw error
     }
   },
+  async getFocusBounds() {
+    try {
+      const result = await ipcRenderer.invoke('dictation:get-focus-bounds')
+      if (result && result.ok && typeof result.x === 'number' && typeof result.y === 'number') {
+        return { x: result.x, y: result.y }
+      }
+      return null
+    } catch (error) {
+      console.error('[Preload] Failed to get focus bounds', error)
+      return null
+    }
+  },
 })

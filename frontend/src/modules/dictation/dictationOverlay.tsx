@@ -39,8 +39,6 @@ export const DictationOverlay: React.FC = () => {
     return null
   }
 
-  const showOverlay = state.status !== 'idle'
-
   const content = useMemo(() => {
     if (state.status === 'permission' && state.permission) {
       return (
@@ -53,21 +51,6 @@ export const DictationOverlay: React.FC = () => {
           }}
           allowDisabled={state.permission?.requestId == null}
         />
-      )
-    }
-
-    if (state.status === 'recording' || state.status === 'processing') {
-      const key = state.status
-      return (
-        <div className="w-full max-w-sm rounded-lg bg-gray-900/90 p-5 text-white shadow-lg">
-          <h2 className="text-lg font-semibold">Press-and-hold Dictation</h2>
-          <p className="mt-2 text-sm text-gray-100">{statusMessages[key]}</p>
-          {state.processing.startedAt && (
-            <p className="mt-4 text-xs text-gray-300">
-              Request {state.processing.requestId?.slice?.(0, 8) || 'pending'} · Attempt {state.processing.attempt}
-            </p>
-          )}
-        </div>
       )
     }
 
@@ -89,7 +72,7 @@ export const DictationOverlay: React.FC = () => {
     error: 'border-red-200 bg-red-50 text-red-700',
   }
 
-  const overlayNode = showOverlay && content ? (
+  const overlayNode = content ? (
     <div className="pointer-events-none fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4">
       <div className="pointer-events-auto" role="status" aria-live="assertive">
         {content}

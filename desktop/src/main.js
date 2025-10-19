@@ -7,6 +7,7 @@ const net = require('net')
 const { checkForUpdates, CHECK_INTERVAL_MS, getLatestManifest } = require('./main/update-checker')
 const dictationSettings = require('./main/dictation-settings')
 const DictationManager = require('./main/dictation-manager')
+const recordingIndicatorWindow = require('./main/recording-indicator-window')
 let macPermissions = null
 try {
   macPermissions = require('node-mac-permissions')
@@ -48,6 +49,36 @@ let lastLoadTarget = ''
 let updateInterval = null
 let dictationSettingsReady = false
 let dictationManager = null
+
+async function triggerDictationWarmup(port) {
+  return new Promise(resolve => {
+    try {
+      const req = http.request({
+        method: 'POST',
+        host: '127.0.0.1',
+        port,
+        path: '/api/v1/dictation/warmup',
+        timeout: 3000,
+      }, res => {
+        const chunks = []
+        res.on('data', chunk => chunks.push(chunk))
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8')
+          logLine('dictation_warmup_response', { statusCode: res.statusCode, body })
+          resolve()
+        })
+      })
+      req.on('error', err => {
+        logLine('dictation_warmup_error', err.message)
+        resolve()
+      })
+      req.end()
+    } catch (error) {
+      logLine('dictation_warmup_exception', error.message)
+      resolve()
+    }
+  })
+}
 
 async function syncDictationManager(settings) {
   try {
@@ -184,6 +215,7 @@ function dataDir() {
 async function startBackendDev() {
   const port = await findPort()
   backendInfo.port = port
+  const mlxVenvDev = path.resolve(__dirname, '..', '..', 'venv_mlx')
   const env = { 
     ...process.env, 
     PATH: withBrewPath(process.env.PATH), 
@@ -195,6 +227,9 @@ async function startBackendDev() {
     SIGNALHUB_LIVE_MIC: '1',
     // Batch-only live mic to ensure full transcript at stop()
     SIGNALHUB_LIVE_BATCH_ONLY: '1',
+    // Enable MLX-accelerated Whisper (3.25x faster on Apple Silicon)
+    SIGNALHUB_USE_MLX: '1',
+    SIGNALHUB_MLX_VENV: mlxVenvDev,
   }
   const cwd = path.join(__dirname, '..', '..', 'backend')
   const args = ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(port)]
@@ -209,6 +244,7 @@ async function startBackendDev() {
     waitStart = Date.now()
     await waitForHealth(port)
     logLine('backend_health_ready', { port, elapsed_ms: Date.now() - waitStart })
+    await triggerDictationWarmup(port)
   } catch (e) {
     logLine('backend_health_failed', { error: e.message, elapsed_ms: Date.now() - waitStart })
     throw e
@@ -218,6 +254,7 @@ async function startBackendDev() {
 async function startBackendProd() {
   const port = await findPort()
   backendInfo.port = port
+  const resourcesVenv = path.join(process.resourcesPath, 'venv_mlx')
   const env = { 
     ...process.env, 
     PATH: withBrewPath(process.env.PATH), 
@@ -231,6 +268,9 @@ async function startBackendProd() {
     SIGNALHUB_LIVE_BATCH_ONLY: '1',
     // Ensure Whisper uses bundled cache for offline models
     XDG_CACHE_HOME: path.join(process.resourcesPath, 'whisper_cache'),
+    // Enable MLX-accelerated Whisper (3.25x faster on Apple Silicon)
+    SIGNALHUB_USE_MLX: '1',
+    SIGNALHUB_MLX_VENV: resourcesVenv,
   }
   const binName = process.platform === 'win32' ? 'signalhub-backend.exe' : 'signalhub-backend'
   const binPath = path.join(process.resourcesPath, 'backend', binName)
@@ -245,6 +285,7 @@ async function startBackendProd() {
     waitStart = Date.now()
     await waitForHealth(port)
     logLine('backend_health_ready', { port, elapsed_ms: Date.now() - waitStart })
+    await triggerDictationWarmup(port)
   } catch (e) {
     logLine('backend_health_failed', { error: e.message, elapsed_ms: Date.now() - waitStart })
     throw e
@@ -483,6 +524,11 @@ app.on('before-quit', () => {
   } catch (error) {
     logLine('dictation_manager_dispose_error', error.message)
   }
+  try {
+    recordingIndicatorWindow.destroyWindow()
+  } catch (error) {
+    logLine('dictation_indicator_destroy_error', error.message)
+  }
   if (updateInterval) {
     clearInterval(updateInterval)
     updateInterval = null
@@ -580,9 +626,34 @@ ipcMain.handle('dictation:type-text', async (_event, payload = {}) => {
     if (!payload || typeof payload.text !== 'string') {
       return { ok: false, message: 'invalid_text' }
     }
-    return await manager.typeText(payload.text)
+    return await manager.typeText(payload)
   } catch (error) {
     logLine('dictation_type_text_error', error.message)
+    return { ok: false, message: error.message }
+  }
+})
+
+ipcMain.handle('dictation:get-focus-bounds', async () => {
+  try {
+    const manager = getDictationManager()
+    const result = manager.getFocusBounds()
+    if (result) {
+      return { ok: true, ...result }
+    }
+    return { ok: false }
+  } catch (error) {
+    logLine('dictation_focus_bounds_error', error.message)
+    return { ok: false, message: error.message }
+  }
+})
+
+ipcMain.handle('dictation:update-indicator', async (_event, payload = {}) => {
+  try {
+    const { visible = false, mode = 'recording', position = null } = payload || {}
+    recordingIndicatorWindow.updateIndicator({ visible, mode, position })
+    return { ok: true }
+  } catch (error) {
+    logLine('dictation_indicator_update_error', error.message)
     return { ok: false, message: error.message }
   }
 })
@@ -618,6 +689,25 @@ function getDictationManager() {
           logLine(`dictation_manager_${level}`, message, meta || {})
         } catch (_) {}
       },
+    })
+
+    dictationManager.on('dictation:press-start', () => {
+      recordingIndicatorWindow.updateIndicator({ visible: true, mode: 'recording' })
+    })
+    dictationManager.on('dictation:press-end', () => {
+      recordingIndicatorWindow.updateIndicator({ visible: true, mode: 'processing' })
+    })
+    dictationManager.on('dictation:press-cancel', () => {
+      recordingIndicatorWindow.hideWindow()
+    })
+    dictationManager.on('dictation:permission-denied', () => {
+      recordingIndicatorWindow.hideWindow()
+    })
+    dictationManager.on('dictation:listener-fallback', () => {
+      recordingIndicatorWindow.hideWindow()
+    })
+    dictationManager.on('dictation:auto-paste-success', () => {
+      recordingIndicatorWindow.hideWindow()
     })
   }
   return dictationManager

@@ -1,4 +1,7 @@
 const EventEmitter = require('events')
+const { clipboard, screen } = require('electron')
+
+let clipboardTipLogged = false
 
 const { createGlobalKeyListenerFactory } = require('./global-key-listener')
 
@@ -71,26 +74,72 @@ class DictationManager extends EventEmitter {
     this._stuckKeyTimer = null
   }
 
-  async typeText(text) {
-    if (!text || typeof text !== 'string') {
+  async typeText(payload = {}) {
+    let text = ''
+    let mode = 'type'
+
+    if (typeof payload === 'string') {
+      text = payload
+    } else if (payload && typeof payload === 'object') {
+      if (typeof payload.text === 'string') {
+        text = payload.text
+      }
+      if (typeof payload.mode === 'string') {
+        mode = payload.mode
+      }
+    }
+
+    if (!text) {
       this._log.warn('typeText invoked without text')
       return { ok: false, reason: 'empty_text' }
     }
 
     try {
-      if (!this._nut) {
-        // eslint-disable-next-line global-require
-        this._nut = require('@nut-tree-fork/nut-js')
-        this._keyboard = this._nut.keyboard
-        this._log.info('nut-js loaded for dictation typing')
+      this._log.debug('typeText requested', { text, length: text.length, mode })
+
+      if (mode === 'paste') {
+        const pasteResult = await this._attemptAutoPaste(text)
+        if (pasteResult.ok) {
+          return pasteResult
+        }
+        this._log.warn('typeText auto-paste fallback to typing', {
+          reason: pasteResult.reason || 'unknown',
+        })
       }
-      if (!this._keyboard || typeof this._keyboard.type !== 'function') {
+
+      if (process.env.SIGNALHUB_DICTATION_USE_CLIPBOARD === '1' && mode !== 'paste') {
+        if (!clipboardTipLogged) {
+          clipboardTipLogged = true
+          this._log.info('dictation clipboard fallback enabled', {
+            instructions: [
+              'Focus the target app',
+              'Run dictation so text copies to clipboard',
+              'Press Cmd+V (or Ctrl+V on Windows/Linux) to paste the transcript',
+            ],
+          })
+        }
+        try {
+          clipboard.writeText(text)
+          this._log.info('typeText clipboard fallback', { length: text.length })
+          this.emit('dictation:auto-paste-success')
+          return { ok: true, method: 'clipboard' }
+        } catch (clipboardError) {
+          this._log.warn('typeText clipboard fallback failed, retrying with keyboard', {
+            error: clipboardError.message,
+          })
+        }
+      }
+
+      if (!this._ensureKeyboardReady('typing') || !this._keyboard || typeof this._keyboard.type !== 'function') {
         this._log.error('typeText missing keyboard type function')
         return { ok: false, reason: 'keyboard_unavailable' }
       }
       await this._keyboard.type(text)
       this._log.info('typeText completed', { length: text.length })
-      return { ok: true }
+      if (mode === 'paste') {
+        this.emit('dictation:auto-paste-success')
+      }
+      return { ok: true, method: 'keyboard' }
     } catch (error) {
       this._log.error('typeText failed', { error: error.message })
       return { ok: false, reason: 'exception', error: error.message }
@@ -118,6 +167,12 @@ class DictationManager extends EventEmitter {
         this._log.error('failed to load @nut-tree-fork/nut-js', { error: error.message })
         return
       }
+    }
+    if (!this._keyboard && this._nut && this._nut.keyboard) {
+      this._keyboard = this._nut.keyboard
+    }
+    if (this._keyboard) {
+      this._configureKeyboardDelay(0)
     }
 
     if (!this._listenerFactory) {
@@ -209,6 +264,109 @@ class DictationManager extends EventEmitter {
     this._log.info('cancelActivePress invoked', { reason, details })
     this._cancelPress(reason, { source: 'renderer', ...details })
     return true
+  }
+
+  _configureKeyboardDelay(delayMs = 0) {
+    if (!this._keyboard) {
+      return
+    }
+
+    if (this._keyboard.config && typeof this._keyboard.config === 'object') {
+      this._keyboard.config.autoDelayMs = delayMs
+    }
+
+    try {
+      const registry = this._keyboard.providerRegistry
+      if (registry && typeof registry.hasKeyboard === 'function' && registry.hasKeyboard()) {
+        const provider = registry.getKeyboard?.()
+        if (provider && typeof provider.setKeyboardDelay === 'function') {
+          provider.setKeyboardDelay(delayMs)
+          this._log.debug('dictation keyboard delay configured', { delayMs })
+        }
+      }
+    } catch (error) {
+      this._log.warn('failed to configure keyboard delay', { error: error.message })
+    }
+  }
+
+  _ensureKeyboardReady(context = 'typing') {
+    if (!this._nut) {
+      try {
+        // eslint-disable-next-line global-require
+        this._nut = require('@nut-tree-fork/nut-js')
+        this._keyboard = this._nut.keyboard
+        this._log.info(`nut-js loaded for dictation ${context}`)
+      } catch (error) {
+        this._log.error('failed to load @nut-tree-fork/nut-js', { context, error: error.message })
+        return false
+      }
+    }
+    if (!this._keyboard && this._nut && this._nut.keyboard) {
+      this._keyboard = this._nut.keyboard
+    }
+    if (this._keyboard) {
+      this._configureKeyboardDelay(0)
+    }
+    return !!this._keyboard
+  }
+
+  async _attemptAutoPaste(text) {
+    if (!this._ensureKeyboardReady('auto_paste') || !this._keyboard || !this._nut) {
+      return { ok: false, reason: 'keyboard_unavailable' }
+    }
+
+    const { Key } = this._nut
+    if (!Key || Key.V === undefined) {
+      return { ok: false, reason: 'key_mapping_unavailable' }
+    }
+
+    const isMac = process.platform === 'darwin'
+    const modifier =
+      (isMac && (Key.LeftCmd ?? Key.LeftSuper ?? Key.LeftMeta)) ??
+      Key.LeftControl ??
+      Key.LeftCtrl ??
+      Key.LeftMeta
+
+    if (modifier === undefined) {
+      return { ok: false, reason: 'modifier_unavailable' }
+    }
+
+    try {
+      clipboard.writeText(text)
+    } catch (error) {
+      return {
+        ok: false,
+        reason: 'clipboard_write_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+
+    try {
+      await this._keyboard.type(modifier, Key.V)
+      await new Promise(resolve => setTimeout(resolve, 200))
+      this._log.info('typeText auto-paste completed', { length: text.length })
+      this.emit('dictation:auto-paste-success')
+      return { ok: true, method: 'paste' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, reason: 'paste_failed', error: message }
+    }
+  }
+
+  getFocusBounds() {
+    try {
+      if (!screen || typeof screen.getCursorScreenPoint !== 'function') {
+        this._log.debug('getFocusBounds unavailable – screen module missing')
+        return null
+      }
+      const point = screen.getCursorScreenPoint()
+      if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+        return { x: point.x, y: point.y }
+      }
+    } catch (error) {
+      this._log.debug('getFocusBounds failed', { error: error instanceof Error ? error.message : String(error) })
+    }
+    return null
   }
 
   async updateShortcut(patch = {}) {
@@ -653,7 +811,7 @@ class DictationManager extends EventEmitter {
 
   _handleKeydown(keyCode, rawEvent = {}) {
     const now = Date.now()
-    if (this._shouldIgnoreEvent(now)) {
+    if (this._shouldIgnoreEvent(now, rawEvent.state)) {
       return
     }
 
@@ -695,7 +853,7 @@ class DictationManager extends EventEmitter {
 
   _handleKeyup(keyCode, rawEvent = {}) {
     const now = Date.now()
-    if (this._shouldIgnoreEvent(now)) {
+    if (this._shouldIgnoreEvent(now, rawEvent.state)) {
       return
     }
 
@@ -794,7 +952,10 @@ class DictationManager extends EventEmitter {
     this._log.debug('state transition', { previous, next, ...meta })
   }
 
-  _shouldIgnoreEvent(now = Date.now()) {
+  _shouldIgnoreEvent(now = Date.now(), state = null) {
+    if (state === 'UP') {
+      return false
+    }
     const diff = now - this._lastEventTs
     if (diff >= 0 && diff < 10) {
       this._log.debug('debounce: ignoring event', { diff })
