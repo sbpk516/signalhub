@@ -1,5 +1,5 @@
 const EventEmitter = require('events')
-const { clipboard } = require('electron')
+const { clipboard, screen } = require('electron')
 
 let clipboardTipLogged = false
 
@@ -121,6 +121,7 @@ class DictationManager extends EventEmitter {
         try {
           clipboard.writeText(text)
           this._log.info('typeText clipboard fallback', { length: text.length })
+          this.emit('dictation:auto-paste-success')
           return { ok: true, method: 'clipboard' }
         } catch (clipboardError) {
           this._log.warn('typeText clipboard fallback failed, retrying with keyboard', {
@@ -135,6 +136,9 @@ class DictationManager extends EventEmitter {
       }
       await this._keyboard.type(text)
       this._log.info('typeText completed', { length: text.length })
+      if (mode === 'paste') {
+        this.emit('dictation:auto-paste-success')
+      }
       return { ok: true, method: 'keyboard' }
     } catch (error) {
       this._log.error('typeText failed', { error: error.message })
@@ -327,20 +331,8 @@ class DictationManager extends EventEmitter {
       return { ok: false, reason: 'modifier_unavailable' }
     }
 
-    let originalClipboard = ''
-    let capturedOriginal = false
-    let clipboardTouched = false
-
-    try {
-      originalClipboard = clipboard.readText()
-      capturedOriginal = true
-    } catch (error) {
-      this._log.warn('auto-paste clipboard read failed', { error: error.message })
-    }
-
     try {
       clipboard.writeText(text)
-      clipboardTouched = true
     } catch (error) {
       return {
         ok: false,
@@ -349,34 +341,32 @@ class DictationManager extends EventEmitter {
       }
     }
 
-    const restoreClipboard = () => {
-      if (!clipboardTouched) {
-        return
-      }
-      try {
-        if (capturedOriginal) {
-          clipboard.writeText(originalClipboard)
-        } else {
-          clipboard.clear()
-        }
-      } catch (restoreError) {
-        this._log.warn('auto-paste clipboard restore failed', {
-          error: restoreError instanceof Error ? restoreError.message : String(restoreError),
-        })
-      }
-    }
-
     try {
       await this._keyboard.type(modifier, Key.V)
-      await new Promise(resolve => setTimeout(resolve, 50))
-      restoreClipboard()
+      await new Promise(resolve => setTimeout(resolve, 200))
       this._log.info('typeText auto-paste completed', { length: text.length })
+      this.emit('dictation:auto-paste-success')
       return { ok: true, method: 'paste' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      restoreClipboard()
       return { ok: false, reason: 'paste_failed', error: message }
     }
+  }
+
+  getFocusBounds() {
+    try {
+      if (!screen || typeof screen.getCursorScreenPoint !== 'function') {
+        this._log.debug('getFocusBounds unavailable – screen module missing')
+        return null
+      }
+      const point = screen.getCursorScreenPoint()
+      if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+        return { x: point.x, y: point.y }
+      }
+    } catch (error) {
+      this._log.debug('getFocusBounds failed', { error: error instanceof Error ? error.message : String(error) })
+    }
+    return null
   }
 
   async updateShortcut(patch = {}) {

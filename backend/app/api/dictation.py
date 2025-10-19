@@ -1,5 +1,6 @@
 """Dictation API endpoints."""
 from typing import Optional
+import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field
 
 # Get the appropriate Whisper processor (PyTorch or MLX)
 whisper_processor = get_global_whisper_processor()
+logger = logging.getLogger("signalhub.dictation")
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 
@@ -43,6 +45,10 @@ class DictationResponse(BaseModel):
     duration_ms: int = Field(..., ge=0, description="Duration of the snippet in milliseconds")
 
 
+_FIRST_SNIPPET_LOG_LIMIT = 5
+_first_snippet_counter = 0
+
+
 @router.post("/transcribe", response_model=DictationResponse, summary="Transcribe a short audio snippet")
 async def transcribe_snippet(request: DictationSnippet) -> DictationResponse:
     """Transcribe an audio snippet and return the text + metadata."""
@@ -53,6 +59,8 @@ async def transcribe_snippet(request: DictationSnippet) -> DictationResponse:
         normalized_media_type = normalized_media_type.split(';')[0].strip().lower()
         if normalized_media_type not in ALLOWED_MEDIA_TYPES:
             raise HTTPException(status_code=400, detail="Unsupported media_type")
+
+    global _first_snippet_counter
 
     try:
         result = whisper_processor.transcribe_snippet_from_base64(
@@ -66,4 +74,35 @@ async def transcribe_snippet(request: DictationSnippet) -> DictationResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    if _first_snippet_counter < _FIRST_SNIPPET_LOG_LIMIT:
+        _first_snippet_counter += 1
+        snippet_no = _first_snippet_counter
+        try:
+            logger.info(
+                "[DICTATION] sample=%d media=%s char_len=%d first_chars=%r",
+                snippet_no,
+                normalized_media_type or "audio/wav",
+                len(result.get("text", "")),
+                (result.get("text", "") or "")[:80],
+            )
+        except Exception:
+            pass
+
     return DictationResponse(**result)
+
+
+class WarmupResponse(BaseModel):
+    status: str
+    whisper_loaded: bool
+
+
+@router.post("/warmup", response_model=WarmupResponse, summary="Ensure dictation models are warm")
+async def warmup_models() -> WarmupResponse:
+    try:
+        loaded = whisper_processor.ensure_loaded()
+    except Exception as exc:
+        logger.error("[DICTATION] warmup_failed error=%s", exc)
+        raise HTTPException(status_code=500, detail="Failed to warm up speech model") from exc
+
+    logger.info("[DICTATION] warmup status=complete did_load=%s", bool(loaded))
+    return WarmupResponse(status="ok", whisper_loaded=bool(loaded))
